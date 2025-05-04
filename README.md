@@ -16,12 +16,13 @@ Im not quite sure about the order, since i don't like LSTMs and think they are a
 ## Task 1 (MLP):
 Do for Pytorch (Alex) and Equinox (Jens):
 
-- select sample dataset
+- select sample dataset: (Artificial Moons for now)
 - verify architecture code, since it's just a one-shotted language model implementation for now.
 - implement training loop
 - experiment with a tree-sitter to generate syntax tree of:
     - model definition
     - training loop
+- identify core concepts of jax that might cause issues on transpilation
 
 ## Task 2 (MLP):
 - Compare tree-sitter results. 
