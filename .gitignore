@@ -173,3 +173,6 @@ logs/
 # secrets.yaml
 # credentials.json
 # *.envrc
+
+# apple presentation files
+*.key
