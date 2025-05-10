@@ -1,0 +1,20 @@
+[project]
+name = "25ss-equitorch"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "equinox>=0.12.1",
+    "jax>=0.6.0",
+    "torch>=2.7.0",
+    "torchvision>=0.22.0",
+    "tree-sitter>=0.24.0",
+    "tree-sitter-python>=0.23.6",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3.5",
+    "pytest-cov>=6.1.1",
+]
