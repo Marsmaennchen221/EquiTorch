@@ -1,25 +1,26 @@
+import os
 from pathlib import Path
 
-# Import the transpiler
+# Get the directory of this script
+script_dir = os.path.dirname(os.path.abspath(__file__))
+
 from transpiler import PyTorchToEquinoxTranspiler
 
-# Read the PyTorch CNN example code
-pytorch_code = Path("pytorch_cnn_example.py").read_text()
+# Read the PyTorch CNN example code with the correct path
+pytorch_code = Path(os.path.join(script_dir, "pytorch_cnn_example.py")).read_text()
 
-# Initialize the transpiler
 transpiler = PyTorchToEquinoxTranspiler()
 
-# Transpile the code
 equinox_code = transpiler.transpile(pytorch_code)
 
-# Print the transpiled code
 print("Transpiled Equinox code:")
 print("-" * 50)
 print(equinox_code)
 print("-" * 50)
 
-# Optionally save to a file
-with open("equinox_cnn.py", "w") as f:
+# Save to a file in the same directory as this script
+output_path = os.path.join(script_dir, "equinox_cnn.py")
+with open(output_path, "w") as f:
     f.write(equinox_code)
 
-print("Saved transpiled code to 'equinox_cnn.py'")
+print(f"Saved transpiled code to '{output_path}'")
