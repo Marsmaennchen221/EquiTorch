@@ -51,11 +51,11 @@ jobs:
 
       - name: Test with pytest
         if: ${{ matrix.os != 'ubuntu-latest' || matrix.python-version != '3.13' }}
-        run: uv run pytest --cov=project
+        run: uv run pytest --cov=equitorch
 
       - name: Test with pytest and codecov
         if: ${{ matrix.os == 'ubuntu-latest' && matrix.python-version == '3.13' }}
-        run: uv run pytest --cov=project --cov-report=xml --junitxml=pytest.xml
+        run: uv run pytest --cov=equitorch --cov-report=xml --junitxml=pytest.xml
 
       - name: Pytest coverage comment
         uses: MishaKav/pytest-coverage-comment@main
@@ -67,7 +67,7 @@ jobs:
 #     Include if Codecov is added to the project
 #      - name: Test with pytest and report code coverage
 #        if: ${{ matrix.os == 'ubuntu-latest' && matrix.python-version == '3.13' }}
-#        run: uv run pytest --cov=project --cov-report=xml
+#        run: uv run pytest --cov=equitorch --cov-report=xml
 #
 #      - name: Upload coverage report to Codecov
 #        if: ${{ matrix.os == 'ubuntu-latest' && matrix.python-version == '3.13' }}
