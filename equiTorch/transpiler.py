@@ -93,9 +93,14 @@ class PyTorchToEquinoxTranspiler:
         if not init_method or not forward_method:
             raise ValueError(f"Class {class_name} must have both __init__ and forward methods")
         
+        # Extract init arguments (excluding 'self')
+        init_args = []
+        if init_method.args.args:
+            init_args = [arg.arg for arg in init_method.args.args[1:]]  # Skip 'self'
+        
         parameters = self._extract_parameters(init_method)
         forward_code = self._transform_forward(forward_method)
-        equinox_module = self._generate_equinox_module(class_name, parameters, forward_code)
+        equinox_module = self._generate_equinox_module(class_name, parameters, forward_code, init_args)
         
         return equinox_module
     
@@ -176,7 +181,7 @@ class PyTorchToEquinoxTranspiler:
         
         return "\n".join(forward_body)
     
-    def _generate_equinox_module(self, class_name: str, parameters: List[Dict[str, Any]], forward_code: str) -> str:
+    def _generate_equinox_module(self, class_name: str, parameters: List[Dict[str, Any]], forward_code: str, init_args: List[str]) -> str:
         """Generate Equinox module code from the extracted information."""
         lines = [f"class {class_name}(eqx.Module):"]
         
@@ -187,7 +192,9 @@ class PyTorchToEquinoxTranspiler:
                 converter = self.module_converters[module_type]
                 lines.append(f"    {param['name']}: {converter.get_equinox_type()}")
         
-        lines.append("    def __init__(self, key=None, **kwargs):")
+        # Create the __init__ signature with the original arguments
+        init_signature = ", ".join(["self"] + init_args + ["key=None", "**kwargs"])
+        lines.append(f"    def __init__({init_signature}):")
         lines.append("        if key is None:")
         lines.append("            key = jax.random.PRNGKey(0)")
         
@@ -197,7 +204,16 @@ class PyTorchToEquinoxTranspiler:
             if module_type in self.module_converters:
                 converter = self.module_converters[module_type]
                 lines.append(f"        key_{i} = jax.random.split(key, 1)[0]")
-                init_code = converter.generate_equinox_code(f"self.{param['name']}", param['args'], f"key_{i}")
+                
+                # Create a copy of the args dictionary to avoid modifying the original
+                args_copy = param['args'].copy()
+                
+                # Replace placeholder values with the corresponding init_args if available
+                for arg_name, arg_value in args_copy.items():
+                    if arg_value == "..." and arg_name in init_args:
+                        args_copy[arg_name] = arg_name
+                
+                init_code = converter.generate_equinox_code(f"self.{param['name']}", args_copy, f"key_{i}")
                 lines.append(f"        {init_code}")
         
         lines.append("")

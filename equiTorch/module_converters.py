@@ -53,6 +53,25 @@ class ModuleConverter:
             return f"{self._extract_value(node.value)}.{node.attr}"
         elif isinstance(node, ast.Constant):
             return node.value
+        elif isinstance(node, ast.BinOp):
+            # For binary operations, preserve the expression
+            left = self._extract_value(node.left)
+            right = self._extract_value(node.right)
+            
+            # Determine the operator symbol
+            if isinstance(node.op, ast.Mult):
+                op = "*"
+            elif isinstance(node.op, ast.Add):
+                op = "+"
+            elif isinstance(node.op, ast.Sub):
+                op = "-"
+            elif isinstance(node.op, ast.Div):
+                op = "/"
+            else:
+                op = "?"
+                
+            # Return the expression as a string
+            return f"{left} {op} {right}"
         else:
             # placeholder for more complex expressions
             return "..."
