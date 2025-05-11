@@ -11,7 +11,7 @@ Our general approach is to work on a list of neural network architectures with i
 7. GAN
 8. Neural ODE
 
-Im not quite sure about the order, since i don't like LSTMs and think they are actually more difficult/complex than VAEs or Transformers, but we will see.
+This order may change as we are unsure of the difficulty/complexity of LSTMs compared to VAEs or Transformers.
 
 ## Task 1 (MLP):
 Do for Pytorch (Alex) and Equinox (Jens):
