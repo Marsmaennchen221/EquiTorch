@@ -3,11 +3,19 @@ import inspect
 import re
 from typing import Dict, List, Any, Optional, Tuple
 
+from module_converters import (
+    ModuleConverter, 
+    LinearConverter, 
+    Conv1dConverter, 
+    Conv2dConverter, 
+    Conv3dConverter
+)
+
 class PyTorchToEquinoxTranspiler:
     """
-    A basic transpiler to convert PyTorch modules to Equinox modules.
+    A transpiler to convert PyTorch modules to Equinox modules.
     
-    Currently focuses on simple module structures with limited functionality.
+    Supports multiple module types through a registry of module converters.
     """
     
     def __init__(self):
@@ -16,6 +24,27 @@ class PyTorchToEquinoxTranspiler:
             "import jax.numpy as jnp",
             "import equinox as eqx",
         ]
+        
+        # Initialize the module converter registry
+        self.module_converters = {}
+        self._register_default_converters()
+    
+    def _register_default_converters(self):
+        """Register the default set of module converters."""
+        self.register_converter("Linear", LinearConverter())
+        self.register_converter("Conv1d", Conv1dConverter())
+        self.register_converter("Conv2d", Conv2dConverter())
+        self.register_converter("Conv3d", Conv3dConverter())
+    
+    def register_converter(self, module_name: str, converter: ModuleConverter):
+        """
+        Register a converter for a specific PyTorch module type.
+        
+        Args:
+            module_name: Name of the PyTorch module (e.g., 'Linear', 'Conv2d')
+            converter: ModuleConverter instance for this module type
+        """
+        self.module_converters[module_name] = converter
     
     def transpile(self, pytorch_code: str) -> str:
         """
@@ -96,31 +125,16 @@ class PyTorchToEquinoxTranspiler:
     
     def _extract_layer_info(self, call_node: ast.Call) -> Optional[Dict[str, Any]]:
         """Extract information about a layer from a call node."""
-        # Handle nn.Linear
-        if (isinstance(call_node.func, ast.Attribute) and 
-            call_node.func.attr == 'Linear'):
-            
-            # Extract arguments
-            args = {}
-            for i, arg in enumerate(call_node.args):
-                if i == 0:
-                    args['in_features'] = self._extract_value(arg)
-                elif i == 1:
-                    args['out_features'] = self._extract_value(arg)
-            
-            # Extract keyword arguments
-            for kw in call_node.keywords:
-                if kw.arg == 'in_features':
-                    args['in_features'] = self._extract_value(kw.value)
-                elif kw.arg == 'out_features':
-                    args['out_features'] = self._extract_value(kw.value)
-                elif kw.arg == 'bias':
-                    args['bias'] = self._extract_value(kw.value)
-            
-            return {
-                'type': 'Linear',
-                'args': args
-            }
+        # Check if this is a module we can convert
+        if isinstance(call_node.func, ast.Attribute):
+            module_name = call_node.func.attr
+            if module_name in self.module_converters:
+                converter = self.module_converters[module_name]
+                args = converter.extract_args(call_node)
+                return {
+                    'type': module_name,
+                    'args': args
+                }
         
         return None
     
@@ -166,23 +180,25 @@ class PyTorchToEquinoxTranspiler:
         """Generate Equinox module code from the extracted information."""
         lines = [f"class {class_name}(eqx.Module):"]
         
+        # Generate type annotations for each parameter
         for param in parameters:
-            if param['type'] == 'Linear':
-                lines.append(f"    {param['name']}: eqx.nn.Linear")
+            module_type = param['type']
+            if module_type in self.module_converters:
+                converter = self.module_converters[module_type]
+                lines.append(f"    {param['name']}: {converter.get_equinox_type()}")
         
         lines.append("    def __init__(self, key=None, **kwargs):")
         lines.append("        if key is None:")
         lines.append("            key = jax.random.PRNGKey(0)")
         
+        # Generate initialization code for each parameter
         for i, param in enumerate(parameters):
-            if param['type'] == 'Linear':
-                args = param['args']
-                in_features = args.get('in_features', '...')
-                out_features = args.get('out_features', '...')
-                bias = args.get('bias', 'True')
-                
+            module_type = param['type']
+            if module_type in self.module_converters:
+                converter = self.module_converters[module_type]
                 lines.append(f"        key_{i} = jax.random.split(key, 1)[0]")
-                lines.append(f"        self.{param['name']} = eqx.nn.Linear({in_features}, {out_features}, use_bias={bias}, key=key_{i})")
+                init_code = converter.generate_equinox_code(f"self.{param['name']}", param['args'], f"key_{i}")
+                lines.append(f"        {init_code}")
         
         lines.append("")
         lines.append("    def __call__(self, x):")
