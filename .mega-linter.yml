@@ -17,6 +17,7 @@ PYTHON_DEFAULT_STYLE: ruff
 # Linters
 ENABLE_LINTERS:
   # Languages
+  - PYTHON_BLACK
   - PYTHON_MYPY
   - PYTHON_RUFF
 

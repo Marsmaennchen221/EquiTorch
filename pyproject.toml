@@ -22,3 +22,75 @@ dev = [
 [tool.pytest.ini_options]
 addopts = "--tb=short"
 pythonpath = "src"
+
+[tool.black]
+line-length = 120
+
+[tool.ruff]
+line-length = 120
+target-version = "py313"
+
+[tool.ruff.lint]
+select = [
+    "F",
+    "E",
+    "W",
+    "I",
+    "N",
+    "D",
+    "UP",
+    "YTT",
+    "BLE",
+    "FBT",
+    "B",
+    "A",
+    "COM",
+    "C4",
+    "DTZ",
+    "T10",
+    "ISC",
+    "ICN",
+    "G",
+    "INP",
+    "PIE",
+    "T20",
+    "PYI",
+    "PT",
+    "Q",
+    "RSE",
+    "RET",
+    "SLF",
+    "SIM",
+    "TID",
+    "TCH",
+    "INT",
+    "ARG",
+    "PTH",
+    "PD",
+    "PGH",
+    "PL",
+    "TRY",
+    "NPY",
+    "RUF"
+]
+ignore = [
+    # line-too-long (handled by black)
+    "E501",
+    # tab-indentation (handled by black)
+    "W191",
+    # trailing-whitespace (handled by black)
+    "W291",
+    # missing-newline-at-end-of-file (handled by black)
+    "W292",
+    # blank-line-with-witespace (handled by black)
+    "W293",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"*test*.py" = [
+    # Undocumented declarations
+    "D10",
+]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
