@@ -4,7 +4,7 @@
 FILTER_REGEX_EXCLUDE: \.github/workflows/
 
 # General Config
-DEFAULT_BRANCH: master
+DEFAULT_BRANCH: main
 FILEIO_REPORTER: false
 IGNORE_GITIGNORED_FILES: true
 PRINT_ALPACA: false
