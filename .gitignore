@@ -176,3 +176,6 @@ logs/
 
 # apple presentation files
 *.key
+
+# megalinter reports
+megalinter-reports/
