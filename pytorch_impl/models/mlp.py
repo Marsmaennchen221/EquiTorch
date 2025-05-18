@@ -24,6 +24,4 @@ class MLP(nn.Module):
         """
         x = F.relu(self.fc1(x))
         x = self.fc2(x)
-        if apply_sigmoid: # Generally, for BCEWithLogitsLoss, you output raw logits
-            return torch.sigmoid(x)
         return x

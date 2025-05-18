@@ -5,7 +5,7 @@ import equinox as eqx
 class MLP(eqx.Module):
     fc1: eqx.nn.Linear
     fc2: eqx.nn.Linear
-    def __init__(self, key=None, **kwargs):
+    def __init__(self, input_size, hidden_size, output_size, key=None, **kwargs):
         if key is None:
             key = jax.random.PRNGKey(0)
         key_0 = jax.random.split(key, 1)[0]
