@@ -3,7 +3,7 @@ import inspect
 import re
 from typing import Dict, List, Any, Optional, Tuple
 
-from module_converters import (
+from .module_converters import (
     ModuleConverter, 
     LinearConverter, 
     Conv1dConverter, 
