@@ -1,5 +1,6 @@
 import ast
 from typing import Dict, Any, Optional, List
+from .ast_builders import EquinoxASTBuilder
 
 class ModuleConverter:
     """Base class for module converters that transform PyTorch modules to Equinox."""
@@ -29,6 +30,20 @@ class ModuleConverter:
             String containing Equinox initialization code
         """
         raise NotImplementedError("Subclasses must implement generate_equinox_code")
+    
+    def generate_equinox_ast(self, param_name: str, args: Dict[str, Any], key_var: str) -> ast.Assign:
+        """
+        Generate Equinox AST node for initializing this module.
+        
+        Args:
+            param_name: Name of the parameter (e.g., 'self.conv1')
+            args: Dictionary of arguments extracted from extract_args
+            key_var: Variable name for the PRNG key
+            
+        Returns:
+            AST assignment node for Equinox initialization
+        """
+        raise NotImplementedError("Subclasses must implement generate_equinox_ast")
     
     def get_equinox_type(self) -> str:
         """
@@ -110,6 +125,45 @@ class LinearConverter(ModuleConverter):
         
         return f"{param_name} = eqx.nn.Linear({in_features}, {out_features}, use_bias={bias}, key={key_var})"
     
+    def generate_equinox_ast(self, param_name: str, args: Dict[str, Any], key_var: str) -> ast.Assign:
+        """Generate Equinox AST node for initializing a Linear layer."""
+        in_features = args.get('in_features', '...')
+        out_features = args.get('out_features', '...')
+        bias = args.get('bias', True)
+        
+        # Create arguments for eqx.nn.Linear call
+        call_args = []
+        
+        # Add positional arguments
+        if isinstance(in_features, str) and in_features != '...':
+            call_args.append(EquinoxASTBuilder.create_name(in_features))
+        elif isinstance(in_features, (int, float)):
+            call_args.append(EquinoxASTBuilder.create_constant(in_features))
+        
+        if isinstance(out_features, str) and out_features != '...':
+            call_args.append(EquinoxASTBuilder.create_name(out_features))
+        elif isinstance(out_features, (int, float)):
+            call_args.append(EquinoxASTBuilder.create_constant(out_features))
+        
+        # Add keyword arguments
+        keywords = []
+        if isinstance(bias, bool):
+            keywords.append(EquinoxASTBuilder.create_keyword('use_bias', EquinoxASTBuilder.create_constant(bias)))
+        elif isinstance(bias, str) and bias.lower() in ['true', 'false']:
+            keywords.append(EquinoxASTBuilder.create_keyword('use_bias', EquinoxASTBuilder.create_constant(bias.lower() == 'true')))
+        
+        keywords.append(EquinoxASTBuilder.create_keyword('key', EquinoxASTBuilder.create_name(key_var)))
+        
+        # Create the eqx.nn.Linear call
+        linear_call = EquinoxASTBuilder.create_call('eqx.nn.Linear', call_args, keywords)
+        
+        # Create the assignment
+        if param_name.startswith('self.'):
+            attr_name = param_name[5:]  # Remove 'self.' prefix
+            return EquinoxASTBuilder.create_attribute_assign('self', attr_name, linear_call)
+        else:
+            return EquinoxASTBuilder.create_assign(param_name, linear_call)
+    
     def get_equinox_type(self) -> str:
         """Return the Equinox type for Linear."""
         return "eqx.nn.Linear"
@@ -168,6 +222,82 @@ class Conv2dConverter(ModuleConverter):
         return (f"{param_name} = eqx.nn.Conv2d({in_channels}, {out_channels}, kernel_size={kernel_size}, "
                 f"stride={stride}, padding={padding}, dilation={dilation}, "
                 f"groups={groups}, use_bias={bias}, key={key_var})")
+    
+    def generate_equinox_ast(self, param_name: str, args: Dict[str, Any], key_var: str) -> ast.Assign:
+        """Generate Equinox AST node for initializing a Conv2d layer."""
+        in_channels = args.get('in_channels', '...')
+        out_channels = args.get('out_channels', '...')
+        kernel_size = args.get('kernel_size', '...')
+        stride = args.get('stride', 1)
+        padding = args.get('padding', 0)
+        dilation = args.get('dilation', 1)
+        groups = args.get('groups', 1)
+        bias = args.get('bias', True)
+        
+        # Create arguments for eqx.nn.Conv2d call
+        call_args = []
+        
+        # Add positional arguments
+        if isinstance(in_channels, str) and in_channels != '...':
+            call_args.append(EquinoxASTBuilder.create_name(in_channels))
+        elif isinstance(in_channels, (int, float)):
+            call_args.append(EquinoxASTBuilder.create_constant(in_channels))
+        
+        if isinstance(out_channels, str) and out_channels != '...':
+            call_args.append(EquinoxASTBuilder.create_name(out_channels))
+        elif isinstance(out_channels, (int, float)):
+            call_args.append(EquinoxASTBuilder.create_constant(out_channels))
+        
+        # Add keyword arguments
+        keywords = []
+        
+        # kernel_size
+        if isinstance(kernel_size, str) and kernel_size != '...':
+            keywords.append(EquinoxASTBuilder.create_keyword('kernel_size', EquinoxASTBuilder.create_name(kernel_size)))
+        elif isinstance(kernel_size, (int, float)):
+            keywords.append(EquinoxASTBuilder.create_keyword('kernel_size', EquinoxASTBuilder.create_constant(kernel_size)))
+        
+        # stride
+        if isinstance(stride, (int, float)):
+            keywords.append(EquinoxASTBuilder.create_keyword('stride', EquinoxASTBuilder.create_constant(stride)))
+        elif isinstance(stride, str):
+            keywords.append(EquinoxASTBuilder.create_keyword('stride', EquinoxASTBuilder.create_name(stride)))
+        
+        # padding
+        if isinstance(padding, (int, float)):
+            keywords.append(EquinoxASTBuilder.create_keyword('padding', EquinoxASTBuilder.create_constant(padding)))
+        elif isinstance(padding, str):
+            keywords.append(EquinoxASTBuilder.create_keyword('padding', EquinoxASTBuilder.create_name(padding)))
+        
+        # dilation
+        if isinstance(dilation, (int, float)):
+            keywords.append(EquinoxASTBuilder.create_keyword('dilation', EquinoxASTBuilder.create_constant(dilation)))
+        elif isinstance(dilation, str):
+            keywords.append(EquinoxASTBuilder.create_keyword('dilation', EquinoxASTBuilder.create_name(dilation)))
+        
+        # groups
+        if isinstance(groups, (int, float)):
+            keywords.append(EquinoxASTBuilder.create_keyword('groups', EquinoxASTBuilder.create_constant(groups)))
+        elif isinstance(groups, str):
+            keywords.append(EquinoxASTBuilder.create_keyword('groups', EquinoxASTBuilder.create_name(groups)))
+        
+        # use_bias
+        if isinstance(bias, bool):
+            keywords.append(EquinoxASTBuilder.create_keyword('use_bias', EquinoxASTBuilder.create_constant(bias)))
+        elif isinstance(bias, str) and bias.lower() in ['true', 'false']:
+            keywords.append(EquinoxASTBuilder.create_keyword('use_bias', EquinoxASTBuilder.create_constant(bias.lower() == 'true')))
+        
+        keywords.append(EquinoxASTBuilder.create_keyword('key', EquinoxASTBuilder.create_name(key_var)))
+        
+        # Create the eqx.nn.Conv2d call
+        conv_call = EquinoxASTBuilder.create_call('eqx.nn.Conv2d', call_args, keywords)
+        
+        # Create the assignment
+        if param_name.startswith('self.'):
+            attr_name = param_name[5:]  # Remove 'self.' prefix
+            return EquinoxASTBuilder.create_attribute_assign('self', attr_name, conv_call)
+        else:
+            return EquinoxASTBuilder.create_assign(param_name, conv_call)
     
     def get_equinox_type(self) -> str:
         """Return the Equinox type for Conv2d."""

@@ -179,3 +179,5 @@ logs/
 
 # megalinter reports
 megalinter-reports/
+
+.archive/*
