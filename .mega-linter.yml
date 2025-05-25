@@ -1,7 +1,7 @@
 # Configuration file for MegaLinter
 # See all available variables at https://megalinter.io/configuration/ and in linters documentation
 
-FILTER_REGEX_EXCLUDE: (\.github/workflows/|\equinox_impl/|\pytorch_impl/)
+FILTER_REGEX_EXCLUDE: (\.github/workflows/|equinox_impl/|pytorch_impl/)
 
 # General Config
 DEFAULT_BRANCH: main
