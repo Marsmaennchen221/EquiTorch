@@ -1,5 +1,4 @@
 import ast
-import pprint
 
 # Read the PyTorch CNN example code
 with open("pytorch_cnn_example.py", "r") as f:

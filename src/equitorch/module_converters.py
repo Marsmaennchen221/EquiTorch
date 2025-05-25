@@ -1,5 +1,6 @@
 import ast
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any
+
 
 class ModuleConverter:
     """Base class for module converters that transform PyTorch modules to Equinox."""

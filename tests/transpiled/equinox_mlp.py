@@ -1,6 +1,6 @@
-import jax
-import jax.numpy as jnp
 import equinox as eqx
+import jax
+
 
 class MLP(eqx.Module):
     fc1: eqx.nn.Linear

@@ -1,15 +1,14 @@
 import ast
-import inspect
-import re
-from typing import Dict, List, Any, Optional, Tuple
+from typing import Dict, List, Any, Optional
 
 from .module_converters import (
-    ModuleConverter, 
-    LinearConverter, 
-    Conv1dConverter, 
-    Conv2dConverter, 
+    ModuleConverter,
+    LinearConverter,
+    Conv1dConverter,
+    Conv2dConverter,
     Conv3dConverter
 )
+
 
 class PyTorchToEquinoxTranspiler:
     """
