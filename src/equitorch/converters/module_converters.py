@@ -48,7 +48,7 @@ def convert_linear(node: ast.Call, key_counter: int) -> ast.Call:
 
 def convert_conv(node: ast.Call, key_counter: int) -> ast.Call:
     """Convert nn.Conv* to eqx.nn.Conv*."""
-    conv_type = node.func.attr
+    conv_type = node.func.attr  # type: ignore[attr-defined]
     key_name = f"key_{key_counter}"
     
     keywords = list(node.keywords)
@@ -72,7 +72,7 @@ def convert_conv(node: ast.Call, key_counter: int) -> ast.Call:
 
 def convert_batchnorm(node: ast.Call, key_counter: int) -> ast.Call:
     """Convert nn.BatchNorm* to eqx.nn.BatchNorm*."""
-    bn_type = node.func.attr
+    bn_type = node.func.attr  # type: ignore[attr-defined]
     key_name = f"key_{key_counter}"
     
     keywords = list(node.keywords)

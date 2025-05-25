@@ -6,8 +6,7 @@ PyTorch tensor method calls (x.view(), x.flatten(), etc.) to their JAX/NumPy equ
 """
 
 import ast
-from typing import Dict, Set, Optional
-
+from typing import Dict, Set, Optional, List
 
 # Set of supported tensor methods that can be converted
 SUPPORTED_METHODS: Set[str] = {
@@ -56,7 +55,7 @@ def transform_reshape(node: ast.Call) -> ast.Call:
     Returns:
         Transformed AST Call node for jnp.reshape()
     """
-    input_tensor = node.func.value
+    input_tensor = node.func.value  # type: ignore[attr-defined]
     
     # Create shape tuple from arguments
     if node.args:
@@ -85,7 +84,7 @@ def transform_tensor_flatten(node: ast.Call) -> ast.Call:
     Returns:
         Transformed AST Call node for jnp.reshape()
     """
-    input_tensor = node.func.value
+    input_tensor = node.func.value  # type: ignore[attr-defined]
     
     # Handle flatten with start_dim parameter
     start_dim = 1  # Default start dimension
@@ -95,6 +94,7 @@ def transform_tensor_flatten(node: ast.Call) -> ast.Call:
             start_dim = node.args[0].value
     
     # Create shape tuple for flattening
+    shape_elements: List[ast.expr]
     if start_dim == 0:
         # Flatten everything: (-1,)
         shape_elements = [ast.Constant(value=-1)]

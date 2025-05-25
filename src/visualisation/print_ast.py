@@ -1,7 +1,7 @@
 import ast
 
 # Read the PyTorch CNN example code
-with open("pytorch_cnn_example.py", "r") as f:
+with open("../../tests/networks/pytorch_cnn_example.py", "r") as f:
     pytorch_code = f.read()
 
 # Parse the code into an AST
