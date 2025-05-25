@@ -1,8 +1,6 @@
-from pathlib import Path
-
 import pytest
-
-from equitorch.transpiler import PyTorchToEquinoxTranspiler
+from pathlib import Path
+from equitorch.transpiler import transpile
 
 
 @pytest.fixture
@@ -16,11 +14,8 @@ def test_mlp_transpilation(script_dir):
     # Read the PyTorch MLP example code
     pytorch_code = Path(script_dir / "../networks/pytorch_mlp_example.py").resolve().read_text()
     
-    # Create a transpiler
-    transpiler = PyTorchToEquinoxTranspiler()
-    
     # Transpile the PyTorch code to Equinox code
-    equinox_code = transpiler.transpile(pytorch_code)
+    equinox_code = transpile(pytorch_code)
     
     # Verify the transpiled code contains expected elements
     assert "import jax" in equinox_code
@@ -48,11 +43,8 @@ def test_cnn_transpilation(script_dir):
     # Read the PyTorch CNN example code
     pytorch_cnn_code = Path(script_dir / "../networks/pytorch_cnn_example.py").resolve().read_text()
     
-    # Create a transpiler
-    transpiler = PyTorchToEquinoxTranspiler()
-    
     # Transpile the PyTorch code to Equinox code
-    equinox_cnn_code = transpiler.transpile(pytorch_cnn_code)
+    equinox_cnn_code = transpile(pytorch_cnn_code)
     
     # Verify the transpiled code contains expected elements
     assert "import jax" in equinox_cnn_code
