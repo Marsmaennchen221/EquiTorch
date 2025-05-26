@@ -1,7 +1,6 @@
 import jax
 import jax.numpy as jnp
 import equinox as eqx
-import torch
 import torch.nn as nn
 import torch.nn.functional as F
 

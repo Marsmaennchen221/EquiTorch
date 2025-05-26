@@ -88,10 +88,8 @@ def transform_tensor_flatten(node: ast.Call) -> ast.Call:
     
     # Handle flatten with start_dim parameter
     start_dim = 1  # Default start dimension
-    if node.args and len(node.args) > 0:
-        # If start_dim is provided as argument
-        if isinstance(node.args[0], ast.Constant):
-            start_dim = node.args[0].value
+    if node.args and len(node.args) > 0 and isinstance(node.args[0], ast.Constant):  # If start_dim is provided as argument
+        start_dim = node.args[0].value
     
     # Create shape tuple for flattening
     shape_elements: List[ast.expr]

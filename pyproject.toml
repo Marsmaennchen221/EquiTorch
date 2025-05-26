@@ -88,6 +88,12 @@ ignore = [
     "W292",
     # blank-line-with-witespace (handled by black)
     "W293",
+    # if-else-block-instead-of-if-exp (an if-else block can be more readable)
+    "SIM108",
+    # raise-vanilla-args
+    "TRY003",
+    # private-member-access
+    "SLF001",
 ]
 
 [tool.ruff.lint.per-file-ignores]

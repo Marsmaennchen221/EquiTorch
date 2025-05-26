@@ -1,3 +1,9 @@
+"""
+Complete transpiler using proper AST transformation patterns and modular converters.
+
+Replaces the complex manual AST processing with clean, standard patterns
+and uses separated converter modules for better organization.
+"""
 import ast
 import sys
 from typing import Optional, List
@@ -21,16 +27,17 @@ from .converters import (
 class PyTorchToEquinoxTransformer(ast.NodeTransformer):
     """
     Complete transpiler using proper AST transformation patterns and modular converters.
-    
+
     This replaces the complex manual AST processing with clean, standard patterns
     and uses separated converter modules for better organization.
     """
-    
+
     def __init__(self):
+        """Initialize the transpiler."""
         self.current_class_params = []  # Track parameters for current class
         self.key_counter = 0
     
-    def visit_Module(self, node: ast.Module) -> ast.Module:
+    def visit_Module(self, node: ast.Module) -> ast.Module:  # noqa: N802
         """Transform the entire module."""
         # Add imports at the top
         imports = [
@@ -47,7 +54,7 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
         
         return new_node
     
-    def visit_ClassDef(self, node: ast.ClassDef) -> ast.ClassDef:
+    def visit_ClassDef(self, node: ast.ClassDef) -> ast.ClassDef:  # noqa: N802
         """Transform PyTorch module classes to Equinox."""
         # Check if this is a PyTorch module
         if not self._is_pytorch_module(node):
@@ -77,7 +84,7 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
         
         return new_node
     
-    def visit_FunctionDef(self, node: ast.FunctionDef) -> ast.FunctionDef:
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> ast.FunctionDef:  # noqa: N802
         """Transform methods."""
         if node.name == '__init__':
             return self._transform_init_method(node)
@@ -86,10 +93,10 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
         else:
             return node
     
-    def visit_Call(self, node: ast.Call) -> ast.Call:
+    def visit_Call(self, node: ast.Call) -> ast.Call:  # noqa: N802
         """Using visitor pattern here now. nested calls are just handled recursively."""
         # First, recursively transform any nested calls
-        node: ast.Call = self.generic_visit(node)  # type: ignore[assignment]
+        node = self.generic_visit(node)  # type: ignore[assignment]
         
         # Now transform this specific call
         if isinstance(node.func, ast.Attribute):
@@ -126,7 +133,7 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
             def __init__(self, parent):
                 self.parent = parent
             
-            def visit_Assign(self, node):
+            def visit_Assign(self, node):  # noqa: N802
                 if (len(node.targets) == 1 and
                     isinstance(node.targets[0], ast.Attribute) and
                     isinstance(node.targets[0].value, ast.Name) and
@@ -223,7 +230,7 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
         node.name = '__call__'
         
         # Transform the body - this automatically handles all nested expressions!
-        node: ast.FunctionDef = self.generic_visit(node)  # type: ignore[assignment]
+        node = self.generic_visit(node)  # type: ignore[assignment]
         
         return node
     
@@ -319,12 +326,4 @@ def transpile(pytorch_code: str) -> str:
     ast.fix_missing_locations(new_tree)
     
     # Convert back to code
-    if sys.version_info >= (3, 9):
-        return ast.unparse(new_tree)
-    else:
-        try:
-            import astor
-            return astor.to_source(new_tree)
-        except ImportError:
-            raise RuntimeError("Python 3.9+ required for ast.unparse, or install 'astor' package")
-
+    return ast.unparse(new_tree)

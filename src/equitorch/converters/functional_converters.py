@@ -1,3 +1,10 @@
+"""
+Method converters for PyTorch functional methods to JAX/NumPy equivalents.
+
+This module contains both the mappings and implementations for converting
+PyTorch functional method calls (F.relu(), torch.flatten(), etc.) to their JAX/NumPy equivalents.
+"""
+
 import ast
 from typing import Dict, Tuple, Optional
 
@@ -81,7 +88,7 @@ def transform_simple_functional(node: ast.Call, new_module: str, new_func: str) 
     )
 
 
-def transform_max_pool(node: ast.Call, new_module: str, new_func: str, func_name: str) -> ast.Call:
+def transform_max_pool(node: ast.Call, new_module: str, new_func: str, func_name: str) -> ast.Call:  # noqa: ARG001 TODO: remove temporary noqa
     """
     Transform max_pool with proper parameter mapping.
     
