@@ -30,14 +30,6 @@ def test_mlp_transpilation(resources_dir):
     assert "jax.nn.relu" in equinox_code
     assert "jax.vmap(self.fc1)" in equinox_code
     assert "jax.vmap(self.fc2)" in equinox_code
-    
-    # Save the transpiled code to a file
-    output_path = resources_dir / "transpiled/equinox_mlp.py"
-    with Path(output_path).open("w") as f:
-        f.write(equinox_code)
-    
-    # Verify the file was created
-    assert output_path.exists()
 
 
 def test_cnn_transpilation(resources_dir):
@@ -60,11 +52,3 @@ def test_cnn_transpilation(resources_dir):
     assert "jax.nn.relu" in equinox_cnn_code
     assert "jax.nn.max_pool" in equinox_cnn_code
     assert "jnp.reshape" in equinox_cnn_code
-    
-    # Save the transpiled code to a file
-    output_path = resources_dir / "transpiled/equinox_cnn.py"
-    with Path(output_path).open("w") as f:
-        f.write(equinox_cnn_code)
-    
-    # Verify the file was created
-    assert output_path.exists()
