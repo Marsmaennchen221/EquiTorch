@@ -1,6 +1,4 @@
-"""
-Visualization for the AST.
-"""
+"""Visualization for the AST."""
 import ast
 from pathlib import Path
 

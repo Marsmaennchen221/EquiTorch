@@ -230,9 +230,7 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
         node.name = '__call__'
         
         # Transform the body - this automatically handles all nested expressions!
-        node = self.generic_visit(node)  # type: ignore[assignment]
-        
-        return node
+        return self.generic_visit(node)  # type: ignore[return]
     
     def _is_self_module_call(self, node: ast.Call) -> bool:
         """Check if this is a self.module(x) call."""

@@ -41,7 +41,7 @@ from .method_converters import (
     transform_tensor_flatten,
 )
 
-__all__ = [
+__all__ = [  # noqa: RUF022
     # Module converters
     'convert_batchnorm',
     'convert_conv',
