@@ -11,7 +11,7 @@ tree = ast.parse(pytorch_code)
 
 # Find the view operation
 for node in ast.walk(tree):
-    if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == 'view':
+    if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "view":
         print("Found view operation:")  # noqa: T201
         print(ast.dump(node, indent=4))  # noqa: T201
         
