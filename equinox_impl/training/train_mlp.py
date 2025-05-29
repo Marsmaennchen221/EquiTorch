@@ -19,7 +19,7 @@ try:
 except (ImportError, ValueError):
     # Fallback for running script directly
     sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
-    from models.mlp import MLP
+    from equinox_impl.models.mlp import MLP
 
 
 def visualize_predictions(

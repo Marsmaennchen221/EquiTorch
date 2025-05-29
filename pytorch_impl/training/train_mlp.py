@@ -1,21 +1,19 @@
 # pytorch_impl/training/train_mlp.py
 
+import argparse
 import os
 import sys
 import time
-from typing import Tuple, Dict, Any, Callable
-import argparse
+from typing import Tuple, Dict
 
+import matplotlib.pyplot as plt
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
-import torch.nn.functional as F
-from torch.utils.data import TensorDataset, DataLoader # For batching
-
-import numpy as np
 from sklearn.datasets import make_moons, make_circles
+from torch.utils.data import TensorDataset, DataLoader  # For batching
 from tqdm import tqdm
-import matplotlib.pyplot as plt
 
 # Assuming mlp.py is in ../models/ relative to this script's location
 try:
@@ -26,7 +24,7 @@ except (ImportError, ValueError):
     parent_dir = os.path.join(script_dir, '..')
     if parent_dir not in sys.path:
         sys.path.insert(0, parent_dir)
-    from models.mlp import MLP
+    from pytorch_impl.models.mlp import MLP
 
 # --- Device Configuration ---
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")

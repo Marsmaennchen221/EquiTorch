@@ -1,5 +1,6 @@
-import jax
 import equinox as eqx
+import jax
+
 
 class MLP(eqx.Module):
     """Simple Multi-Layer Perceptron (MLP) with one hidden layer and ReLU activation function."""

@@ -1,18 +1,20 @@
-import pytest
 from pathlib import Path
+
+import pytest
+
 from equitorch.transpiler import transpile
 
 
 @pytest.fixture
-def script_dir():
+def resources_dir():
     """Return the directory containing the test script."""
-    return Path(__file__).parent
+    return Path(__file__).parent / ".." / "resources"
 
 
-def test_mlp_transpilation(script_dir):
+def test_mlp_transpilation(resources_dir):
     """Test transpilation of a PyTorch MLP to Equinox."""
     # Read the PyTorch MLP example code
-    pytorch_code = Path(script_dir / "../networks/pytorch_mlp_example.py").resolve().read_text()
+    pytorch_code = Path(resources_dir / "networks/pytorch_mlp_example.py").resolve().read_text()
     
     # Transpile the PyTorch code to Equinox code
     equinox_code = transpile(pytorch_code)
@@ -28,14 +30,6 @@ def test_mlp_transpilation(script_dir):
     assert "jax.nn.relu" in equinox_code
     assert "jax.vmap(self.fc1)" in equinox_code
     assert "jax.vmap(self.fc2)" in equinox_code
-    
-    # Save the transpiled code to a file
-    output_path = script_dir / "../transpiled/equinox_mlp.py"
-    with open(output_path, "w") as f:
-        f.write(equinox_code)
-    
-    # Verify the file was created
-    assert output_path.exists()
 
 
 def test_rnn_transpilation(script_dir):
@@ -148,10 +142,10 @@ def test_lstm_transpilation(script_dir):
     assert output_path.exists()
 
 
-def test_cnn_transpilation(script_dir):
+def test_cnn_transpilation(resources_dir):
     """Test transpilation of a PyTorch CNN to Equinox."""
     # Read the PyTorch CNN example code
-    pytorch_cnn_code = Path(script_dir / "../networks/pytorch_cnn_example.py").resolve().read_text()
+    pytorch_cnn_code = Path(resources_dir / "networks/pytorch_cnn_example.py").resolve().read_text()
     
     # Transpile the PyTorch code to Equinox code
     equinox_cnn_code = transpile(pytorch_cnn_code)
@@ -168,11 +162,3 @@ def test_cnn_transpilation(script_dir):
     assert "jax.nn.relu" in equinox_cnn_code
     assert "jax.nn.max_pool" in equinox_cnn_code
     assert "jnp.reshape" in equinox_cnn_code
-    
-    # Save the transpiled code to a file
-    output_path = script_dir / "../transpiled/equinox_cnn.py"
-    with open(output_path, "w") as f:
-        f.write(equinox_cnn_code)
-    
-    # Verify the file was created
-    assert output_path.exists()
