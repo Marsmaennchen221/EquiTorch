@@ -29,6 +29,7 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
         """Initialize the transpiler."""
         self.current_class_params = []  # Track parameters for current class
         self.key_counter = 0
+        self.required_class_definitions = set()  # Track classes that need to be injected
     
     def visit_Module(self, node: ast.Module) -> ast.Module:  # noqa: N802
         """Transform the entire module."""
@@ -42,8 +43,11 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
         # Transform the rest of the module
         new_node: ast.Module = self.generic_visit(node)  # type: ignore[assignment]
         
-        # Prepend imports to the body
-        new_node.body = imports + new_node.body
+        # Inject required class definitions
+        class_definitions = self._get_required_class_definitions()
+        
+        # Prepend imports and append class definitions
+        new_node.body = imports + new_node.body + class_definitions
         
         return new_node
     
@@ -145,20 +149,42 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
         extractor.visit(init_method)
     
     def _add_type_annotations(self, class_node: ast.ClassDef):
-        """Add type annotations for parameters."""
+        """Add type annotations for parameters using correct transpiled types."""
+        from .converters.module_converters import PYTORCH_TO_CUSTOM_MAPPING
+        
         annotations = []
         for param in self.current_class_params:
-            annotation = ast.AnnAssign(
-                target=ast.Name(id=param["name"], ctx=ast.Store()),
-                annotation=ast.Attribute(
+            pytorch_type = param["type"]
+            
+            # Determine the correct type annotation
+            if pytorch_type in PYTORCH_TO_CUSTOM_MAPPING:
+                # Use custom implementation name
+                custom_type = PYTORCH_TO_CUSTOM_MAPPING[pytorch_type]
+                annotation_node = ast.Name(id=custom_type, ctx=ast.Load())
+            elif pytorch_type in ["Linear", "Conv1d", "Conv2d", "Conv3d", "BatchNorm1d", "BatchNorm2d", "BatchNorm3d", "Dropout", "LSTM"]:
+                # Use eqx.nn.ModuleName for standard Equinox modules
+                if pytorch_type == "LSTM":
+                    # LSTM maps to LSTMCell
+                    equinox_type = "LSTMCell"
+                else:
+                    equinox_type = pytorch_type
+                    
+                annotation_node = ast.Attribute(
                     value=ast.Attribute(
                         value=ast.Name(id="eqx", ctx=ast.Load()),
                         attr="nn",
                         ctx=ast.Load(),
                     ),
-                    attr=param["type"],
+                    attr=equinox_type,
                     ctx=ast.Load(),
-                ),
+                )
+            else:
+                # Auto-transpiled module - use the module name directly
+                annotation_node = ast.Name(id=pytorch_type, ctx=ast.Load())
+            
+            annotation = ast.AnnAssign(
+                target=ast.Name(id=param["name"], ctx=ast.Store()),
+                annotation=annotation_node,
                 value=None,
                 simple=1,
             )
@@ -291,8 +317,47 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
         if is_supported_module(module_type):
             converter = get_module_converter(module_type)
             self.key_counter += 1
+            
+            # Track if this module needs a class definition to be injected
+            self.required_class_definitions.add(module_type)
+            
             return converter(node, self.key_counter - 1)
         return node
+    
+    def _get_required_class_definitions(self) -> list[ast.stmt]:
+        """Generate AST nodes for required class definitions using the generic system."""
+        from .converters.module_converters import (
+            get_required_custom_implementations,
+            auto_transpile_module,
+            PYTORCH_TO_CUSTOM_MAPPING,
+        )
+        
+        class_definitions = []
+        
+        # Get custom implementations for PyTorch modules that need them
+        custom_implementations = get_required_custom_implementations(self.required_class_definitions)
+        
+        for custom_name, definition in custom_implementations.items():
+            class_code = definition.strip()
+            class_ast = ast.parse(class_code)
+            class_definitions.extend(class_ast.body)
+        
+        # Handle auto-transpiled modules (those not in custom mappings and not in manual mappings)
+        from .converters.module_converters import MODULE_MAPPINGS
+        
+        for pytorch_module in self.required_class_definitions:
+            if (pytorch_module not in PYTORCH_TO_CUSTOM_MAPPING and 
+                pytorch_module not in MODULE_MAPPINGS):
+                # This is an auto-transpiled class (not custom, not manual)
+                try:
+                    class_def_str, _ = auto_transpile_module(pytorch_module)
+                    class_ast = ast.parse(class_def_str)
+                    class_definitions.extend(class_ast.body)
+                except Exception:
+                    # If auto-transpilation fails, skip this class
+                    pass
+        
+        return class_definitions
 
 
 def transpile(pytorch_code: str) -> str:

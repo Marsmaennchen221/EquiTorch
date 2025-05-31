@@ -11,6 +11,8 @@ SUPPORTED_METHODS: set[str] = {
     "view",
     "reshape", 
     "flatten",
+    "size",
+    "unsqueeze",
 }
 
 # Mapping from PyTorch tensor methods to target functions
@@ -38,6 +40,10 @@ def transform_method_call(node: ast.Call, method_name: str) -> ast.Call:
         return transform_reshape(node)
     if method_name == "flatten":
         return transform_tensor_flatten(node)
+    if method_name == "size":
+        return transform_size(node)
+    if method_name == "unsqueeze":
+        return transform_unsqueeze(node)
     return node
 
 
@@ -114,6 +120,65 @@ def transform_tensor_flatten(node: ast.Call) -> ast.Call:
         args=[input_tensor, shape_tuple],
         keywords=[],
     )
+
+
+def transform_size(node: ast.Call) -> ast.Subscript:
+    """Transform x.size(dim) to x.shape[dim].
+    
+    Args:
+        node: The AST Call node for tensor.size()
+        
+    Returns:
+        Transformed AST Subscript node for tensor.shape[dim]
+    """
+    input_tensor = node.func.value  # type: ignore[attr-defined]
+    
+    if node.args and len(node.args) > 0:
+        # x.size(dim) -> x.shape[dim]
+        dim = node.args[0]
+        return ast.Subscript(
+            value=ast.Attribute(value=input_tensor, attr="shape", ctx=ast.Load()),
+            slice=dim,
+            ctx=ast.Load(),
+        )
+    else:
+        # x.size() -> x.shape (return the whole shape tuple)
+        return ast.Attribute(value=input_tensor, attr="shape", ctx=ast.Load())  # type: ignore[return-value]
+
+
+def transform_unsqueeze(node: ast.Call) -> ast.Call:
+    """Transform x.unsqueeze(dim) to jnp.expand_dims(x, axis=dim).
+    
+    Args:
+        node: The AST Call node for tensor.unsqueeze()
+        
+    Returns:
+        Transformed AST Call node for jnp.expand_dims()
+    """
+    input_tensor = node.func.value  # type: ignore[attr-defined]
+    
+    if node.args and len(node.args) > 0:
+        dim = node.args[0]
+        return ast.Call(
+            func=ast.Attribute(
+                value=ast.Name(id="jnp", ctx=ast.Load()),
+                attr="expand_dims",
+                ctx=ast.Load(),
+            ),
+            args=[input_tensor],
+            keywords=[ast.keyword(arg="axis", value=dim)],
+        )
+    else:
+        # If no dimension specified, default to last dimension
+        return ast.Call(
+            func=ast.Attribute(
+                value=ast.Name(id="jnp", ctx=ast.Load()),
+                attr="expand_dims",
+                ctx=ast.Load(),
+            ),
+            args=[input_tensor],
+            keywords=[ast.keyword(arg="axis", value=ast.Constant(value=-1))],
+        )
 
 
 def is_supported_method(method_name: str) -> bool:

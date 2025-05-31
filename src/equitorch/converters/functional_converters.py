@@ -14,7 +14,15 @@ FUNCTIONAL_MAPPINGS: dict[tuple[str, str], tuple[str, str]] = {
     ("F", "max_pool1d"): ("jax.nn", "max_pool"),
     ("F", "max_pool2d"): ("jax.nn", "max_pool"),
     ("F", "max_pool3d"): ("jax.nn", "max_pool"),
+    ("F", "softmax"): ("jax.nn", "softmax"),
     ("torch", "flatten"): ("jnp", "reshape"),
+    ("torch", "zeros"): ("jnp", "zeros"),
+    ("torch", "relu"): ("jax.nn", "relu"),
+    ("torch", "max_pool2d"): ("jax.nn", "max_pool"),
+    ("torch", "tanh"): ("jnp", "tanh"),
+    ("torch", "matmul"): ("jnp", "matmul"),
+    ("torch", "sum"): ("jnp", "sum"),
+    ("torch", "randn"): ("jax.random", "normal"),
 }
 
 
