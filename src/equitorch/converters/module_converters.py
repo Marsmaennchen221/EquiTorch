@@ -157,14 +157,14 @@ def get_custom_module_definition(custom_name: str) -> str:
     return function()
 
 
-def create_custom_module_converter(pytorch_module: str) -> Callable[[ast.Call, int], ast.Call]:
+def create_custom_module_converter(pytorch_module: str) -> Callable[[ast.Call, int], tuple[ast.Call, ast.AST]]:
     """Create a converter function for a custom module implementation.
     
     Args:
         pytorch_module: Name of the PyTorch module (e.g., 'RNN')
         
     Returns:
-        Converter function
+        Converter function that returns (transformed_node, type_annotation)
         
     Raises:
         ValueError: If no custom implementation is mapped for this PyTorch module
@@ -174,15 +174,25 @@ def create_custom_module_converter(pytorch_module: str) -> Callable[[ast.Call, i
     
     custom_name = PYTORCH_TO_CUSTOM_MAPPING[pytorch_module]
     
-    def converter(node: ast.Call, key_counter: int) -> ast.Call:
+    def converter(node: ast.Call, key_counter: int) -> tuple[ast.Call, ast.AST]:
         keywords = list(node.keywords)
         keywords.append(ast.keyword(arg="key", value=ast.Name(id="subkey", ctx=ast.Load())))
         
-        return ast.Call(
+        # Filter out PyTorch-specific parameters that don't exist in our custom implementation
+        filtered_keywords = []
+        for kw in keywords:
+            if kw.arg not in ["batch_first", "dropout", "bidirectional", "num_layers"]:
+                filtered_keywords.append(kw)
+        
+        transformed_node = ast.Call(
             func=ast.Name(id=custom_name, ctx=ast.Load()),
             args=node.args[:2],  # Most RNN-like modules take input_size, hidden_size
-            keywords=keywords,
+            keywords=filtered_keywords,
         )
+        
+        type_annotation = ast.Name(id=custom_name, ctx=ast.Load())
+        
+        return transformed_node, type_annotation
     
     return converter
 
@@ -441,11 +451,7 @@ def is_supported_module(module_name: str) -> bool:
 
 def convert_rnn(node: ast.Call, key_counter: int) -> tuple[ast.Call, ast.AST]:
     """Convert nn.RNN using the generic custom module system."""
-    transformed_node = create_custom_module_converter("RNN")(node, key_counter)
-    
-    type_annotation = ast.Name(id="ElmanRNNCell", ctx=ast.Load())
-    
-    return transformed_node, type_annotation
+    return create_custom_module_converter("RNN")(node, key_counter)
 
 
 def convert_lstm(node: ast.Call, key_counter: int) -> tuple[ast.Call, ast.AST]:

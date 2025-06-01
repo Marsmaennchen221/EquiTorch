@@ -12,7 +12,7 @@ class RNN(nn.Module):
         # x shape: [batch_size, seq_len, input_size]
         if hidden is None:
             # Initialize hidden state
-            hidden = torch.zeros(1, x.size(0), self.hidden_size, device=x.device)
+            hidden = torch.zeros(1, x.size(0), self.hidden_size)
             
         # Run RNN
         output, hidden = self.rnn(x, hidden)
