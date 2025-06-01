@@ -50,6 +50,24 @@ PYTORCH_TO_CUSTOM_MAPPING: dict[str, str] = {
     # "LSTM": "CustomLSTMCell",  # if we want custom LSTM instead of eqx.nn.LSTMCell
 }
 
+# Mapping from PyTorch types to their Equinox type annotation equivalents
+PYTORCH_TO_EQUINOX_TYPE_MAPPING: dict[str, str] = {
+    # PyTorch types -> Equinox type annotations
+    "Parameter": "jnp.ndarray",
+    "Linear": "eqx.nn.Linear", 
+    "Conv1d": "eqx.nn.Conv1d",
+    "Conv2d": "eqx.nn.Conv2d",
+    "Conv3d": "eqx.nn.Conv3d",
+    "BatchNorm1d": "eqx.nn.BatchNorm1d",
+    "BatchNorm2d": "eqx.nn.BatchNorm2d",
+    "BatchNorm3d": "eqx.nn.BatchNorm3d",
+    "Dropout": "eqx.nn.Dropout",
+    "LSTM": "eqx.nn.LSTMCell",
+    # Custom implementations
+    "RNN": "ElmanRNNCell",
+    # Add more as needed...
+}
+
 
 def auto_transpile_module(module_name: str) -> tuple[str, str]:
     """Auto-transpile a PyTorch module by recursively transpiling its source.
@@ -222,7 +240,7 @@ def create_auto_transpiled_converter(module_name: str) -> Callable[[ast.Call, in
     return converter
 
 
-def convert_linear(node: ast.Call, key_counter: int) -> ast.Call:
+def convert_linear(node: ast.Call, key_counter: int) -> tuple[ast.Call, ast.AST]:
     """Convert nn.Linear to eqx.nn.Linear."""
     key_name = f"key_{key_counter}"
     
@@ -231,7 +249,7 @@ def convert_linear(node: ast.Call, key_counter: int) -> ast.Call:
     keywords.append(ast.keyword(arg="use_bias", value=ast.Constant(value=True)))
     keywords.append(ast.keyword(arg="key", value=ast.Name(id=key_name, ctx=ast.Load())))
     
-    return ast.Call(
+    transformed_node = ast.Call(
         func=ast.Attribute(
             value=ast.Attribute(
                 value=ast.Name(id="eqx", ctx=ast.Load()),
@@ -244,6 +262,18 @@ def convert_linear(node: ast.Call, key_counter: int) -> ast.Call:
         args=node.args,
         keywords=keywords,
     )
+    
+    type_annotation = ast.Attribute(
+        value=ast.Attribute(
+            value=ast.Name(id="eqx", ctx=ast.Load()),
+            attr="nn",
+            ctx=ast.Load(),
+        ),
+        attr="Linear",
+        ctx=ast.Load(),
+    )
+    
+    return transformed_node, type_annotation
 
 
 def convert_conv(node: ast.Call, key_counter: int) -> ast.Call:
@@ -404,14 +434,23 @@ def convert_lstm(node: ast.Call, key_counter: int) -> ast.Call:
     )
 
 
-def convert_parameter(node: ast.Call, key_counter: int) -> ast.Call:  # noqa: ARG001
+def convert_parameter(node: ast.Call, key_counter: int) -> tuple[ast.Call, ast.AST]:  # noqa: ARG001
     """Convert nn.Parameter to the inner tensor creation.
     
     For nn.Parameter, we extract the inner tensor creation and convert it.
     """
     if node.args:
-        return node.args[0]  # Return the tensor creation call (e.g., torch.randn)
-    return node
+        transformed_node = node.args[0]  # Return the tensor creation call (e.g., torch.randn)
+    else:
+        transformed_node = node
+    
+    type_annotation = ast.Attribute(
+        value=ast.Name(id="jnp", ctx=ast.Load()),
+        attr="ndarray",
+        ctx=ast.Load(),
+    )
+    
+    return transformed_node, type_annotation
 
 
 def get_elman_rnn_cell_definition() -> str:

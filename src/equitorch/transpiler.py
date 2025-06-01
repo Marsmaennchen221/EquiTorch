@@ -139,48 +139,28 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
                     param_name = node.targets[0].attr
                     if self.parent._is_pytorch_module_init(node.value):
                         module_type = node.value.func.attr
+                        # We'll fill in transformed_node and type_annotation later during transformation
                         self.parent.current_class_params.append({
                             "name": param_name,
                             "type": module_type,
                             "call_node": node.value,
+                            "transformed_node": None,  # Will be filled during transformation
+                            "type_annotation": None,   # Will be filled during transformation
                         })
         
         extractor = ParameterExtractor(self)
         extractor.visit(init_method)
     
     def _add_type_annotations(self, class_node: ast.ClassDef):
-        """Add type annotations for parameters using correct transpiled types."""
-        from .converters.module_converters import PYTORCH_TO_CUSTOM_MAPPING
-        
+        """Add type annotations for parameters using type info from converters."""
         annotations = []
         for param in self.current_class_params:
-            pytorch_type = param["type"]
-            
-            # Determine the correct type annotation
-            if pytorch_type in PYTORCH_TO_CUSTOM_MAPPING:
-                # Use custom implementation name
-                custom_type = PYTORCH_TO_CUSTOM_MAPPING[pytorch_type]
-                annotation_node = ast.Name(id=custom_type, ctx=ast.Load())
-            elif pytorch_type in ["Linear", "Conv1d", "Conv2d", "Conv3d", "BatchNorm1d", "BatchNorm2d", "BatchNorm3d", "Dropout", "LSTM"]:
-                # Use eqx.nn.ModuleName for standard Equinox modules
-                if pytorch_type == "LSTM":
-                    # LSTM maps to LSTMCell
-                    equinox_type = "LSTMCell"
-                else:
-                    equinox_type = pytorch_type
-                    
-                annotation_node = ast.Attribute(
-                    value=ast.Attribute(
-                        value=ast.Name(id="eqx", ctx=ast.Load()),
-                        attr="nn",
-                        ctx=ast.Load(),
-                    ),
-                    attr=equinox_type,
-                    ctx=ast.Load(),
-                )
+            # Use the type annotation provided by the converter if available
+            if param["type_annotation"] is not None:
+                annotation_node = param["type_annotation"]
             else:
-                # Auto-transpiled module - use the module name directly
-                annotation_node = ast.Name(id=pytorch_type, ctx=ast.Load())
+                # Fallback to auto-transpiled module name for custom modules
+                annotation_node = ast.Name(id=param["type"], ctx=ast.Load())
             
             annotation = ast.AnnAssign(
                 target=ast.Name(id=param["name"], ctx=ast.Store()),
@@ -311,6 +291,14 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
             return transform_method_call(node, method_name)
         return node
     
+    def _store_type_annotation(self, original_node: ast.Call, type_annotation: ast.AST):
+        """Store type annotation for a parameter based on its original call node."""
+        # Find the parameter that corresponds to this call node
+        for param in self.current_class_params:
+            if param["call_node"] is original_node:
+                param["type_annotation"] = type_annotation
+                break
+    
     def _transform_module_init(self, node: ast.Call) -> ast.Call:
         """Transform PyTorch module initialization to Equinox using modular converters."""
         module_type = node.func.attr  # type: ignore[attr-defined]
@@ -321,7 +309,18 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
             # Track if this module needs a class definition to be injected
             self.required_class_definitions.add(module_type)
             
-            return converter(node, self.key_counter - 1)
+            # Call converter and handle both old and new interface
+            result = converter(node, self.key_counter - 1)
+            
+            # Check if converter returns tuple (new interface) or just node (old interface)
+            if isinstance(result, tuple):
+                transformed_node, type_annotation = result
+                # Store the type annotation for this parameter
+                self._store_type_annotation(node, type_annotation)
+                return transformed_node
+            else:
+                # Old interface - just return the node
+                return result
         return node
     
     def _get_required_class_definitions(self) -> list[ast.stmt]:
