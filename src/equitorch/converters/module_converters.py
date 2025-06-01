@@ -175,9 +175,8 @@ def create_custom_module_converter(pytorch_module: str) -> Callable[[ast.Call, i
     custom_name = PYTORCH_TO_CUSTOM_MAPPING[pytorch_module]
     
     def converter(node: ast.Call, key_counter: int) -> ast.Call:
-        key_name = f"key_{key_counter}"
         keywords = list(node.keywords)
-        keywords.append(ast.keyword(arg="key", value=ast.Name(id=key_name, ctx=ast.Load())))
+        keywords.append(ast.keyword(arg="key", value=ast.Name(id="subkey", ctx=ast.Load())))
         
         return ast.Call(
             func=ast.Name(id=custom_name, ctx=ast.Load()),
@@ -227,9 +226,8 @@ def create_auto_transpiled_converter(module_name: str) -> Callable[[ast.Call, in
         class_def, type_annotation = auto_transpile_module(module_name)
         
         # Create a call to the auto-transpiled class
-        key_name = f"key_{key_counter}"
         keywords = list(node.keywords)
-        keywords.append(ast.keyword(arg="key", value=ast.Name(id=key_name, ctx=ast.Load())))
+        keywords.append(ast.keyword(arg="key", value=ast.Name(id="subkey", ctx=ast.Load())))
         
         transformed_node = ast.Call(
             func=ast.Name(id=type_annotation, ctx=ast.Load()),
@@ -246,12 +244,10 @@ def create_auto_transpiled_converter(module_name: str) -> Callable[[ast.Call, in
 
 def convert_linear(node: ast.Call, key_counter: int) -> tuple[ast.Call, ast.AST]:
     """Convert nn.Linear to eqx.nn.Linear."""
-    key_name = f"key_{key_counter}"
-    
-    # Add key split before this (would need to be handled in parent context)
+    # Use 'subkey' as the consistent key variable name
     keywords = list(node.keywords)
     keywords.append(ast.keyword(arg="use_bias", value=ast.Constant(value=True)))
-    keywords.append(ast.keyword(arg="key", value=ast.Name(id=key_name, ctx=ast.Load())))
+    keywords.append(ast.keyword(arg="key", value=ast.Name(id="subkey", ctx=ast.Load())))
     
     transformed_node = ast.Call(
         func=ast.Attribute(
@@ -283,11 +279,10 @@ def convert_linear(node: ast.Call, key_counter: int) -> tuple[ast.Call, ast.AST]
 def convert_conv(node: ast.Call, key_counter: int) -> tuple[ast.Call, ast.AST]:
     """Convert nn.Conv* to eqx.nn.Conv*."""
     conv_type = node.func.attr  # type: ignore[attr-defined]
-    key_name = f"key_{key_counter}"
     
     keywords = list(node.keywords)
     keywords.append(ast.keyword(arg="use_bias", value=ast.Constant(value=True)))
-    keywords.append(ast.keyword(arg="key", value=ast.Name(id=key_name, ctx=ast.Load())))
+    keywords.append(ast.keyword(arg="key", value=ast.Name(id="subkey", ctx=ast.Load())))
     
     transformed_node = ast.Call(
         func=ast.Attribute(
@@ -319,10 +314,9 @@ def convert_conv(node: ast.Call, key_counter: int) -> tuple[ast.Call, ast.AST]:
 def convert_batchnorm(node: ast.Call, key_counter: int) -> tuple[ast.Call, ast.AST]:
     """Convert nn.BatchNorm* to eqx.nn.BatchNorm*."""
     bn_type = node.func.attr  # type: ignore[attr-defined]
-    key_name = f"key_{key_counter}"
     
     keywords = list(node.keywords)
-    keywords.append(ast.keyword(arg="key", value=ast.Name(id=key_name, ctx=ast.Load())))
+    keywords.append(ast.keyword(arg="key", value=ast.Name(id="subkey", ctx=ast.Load())))
     
     transformed_node = ast.Call(
         func=ast.Attribute(
@@ -353,10 +347,8 @@ def convert_batchnorm(node: ast.Call, key_counter: int) -> tuple[ast.Call, ast.A
 
 def convert_dropout(node: ast.Call, key_counter: int) -> tuple[ast.Call, ast.AST]:
     """Convert nn.Dropout to eqx.nn.Dropout."""
-    key_name = f"key_{key_counter}"
-    
     keywords = list(node.keywords)
-    keywords.append(ast.keyword(arg="key", value=ast.Name(id=key_name, ctx=ast.Load())))
+    keywords.append(ast.keyword(arg="key", value=ast.Name(id="subkey", ctx=ast.Load())))
     
     transformed_node = ast.Call(
         func=ast.Attribute(
@@ -458,10 +450,8 @@ def convert_rnn(node: ast.Call, key_counter: int) -> tuple[ast.Call, ast.AST]:
 
 def convert_lstm(node: ast.Call, key_counter: int) -> tuple[ast.Call, ast.AST]:
     """Convert nn.LSTM to eqx.nn.LSTMCell."""
-    key_name = f"key_{key_counter}"
-    
     keywords = list(node.keywords)
-    keywords.append(ast.keyword(arg="key", value=ast.Name(id=key_name, ctx=ast.Load())))
+    keywords.append(ast.keyword(arg="key", value=ast.Name(id="subkey", ctx=ast.Load())))
     
     transformed_node = ast.Call(
         func=ast.Attribute(

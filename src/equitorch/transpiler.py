@@ -94,15 +94,9 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
         # First, recursively transform the assignment
         node = self.generic_visit(node)  # type: ignore[assignment]
         
-        # Check if this is a self.param = Module(...) assignment
-        if (len(node.targets) == 1 and
-            isinstance(node.targets[0], ast.Attribute) and
-            isinstance(node.targets[0].value, ast.Name) and
-            node.targets[0].value.id == "self" and
-            isinstance(node.value, ast.Call) and
-            self._is_pytorch_module_init(node.value)):
-            
-            # This is a module assignment - add key splitting
+        # Check if this assignment needs key splitting (contains subkey usage)
+        if self._assignment_needs_key_splitting(node):
+            # This assignment uses subkey - add key splitting
             statements = []
             
             # Add key splitting: key, subkey = jax.random.split(key)
@@ -152,6 +146,10 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
                 return self._transform_method_call(node)
             if self._is_pytorch_module_init(node):
                 return self._transform_module_init(node)
+        elif isinstance(node.func, ast.Name):
+            # Handle custom class instantiations
+            if self._is_custom_class_init(node):
+                return self._transform_custom_class_init(node)
         
         return node
     
@@ -172,7 +170,7 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
         return None
     
     def _extract_parameters(self, init_method: ast.FunctionDef):
-        """Extract module parameters from __init__ method."""
+        """Extract ALL self.param = Class(...) assignments for type annotations."""
         class ParameterExtractor(ast.NodeVisitor):
             def __init__(self, parent):
                 self.parent = parent
@@ -185,15 +183,27 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
                     isinstance(node.value, ast.Call)):
                     
                     param_name = node.targets[0].attr
+                    
+                    # Handle both PyTorch modules and custom classes
                     if self.parent._is_pytorch_module_init(node.value):
+                        # PyTorch module - use existing logic
                         module_type = node.value.func.attr
-                        # We'll fill in transformed_node and type_annotation later during transformation
                         self.parent.current_class_params.append({
                             "name": param_name,
                             "type": module_type,
                             "call_node": node.value,
                             "transformed_node": None,  # Will be filled during transformation
                             "type_annotation": None,   # Will be filled during transformation
+                        })
+                    elif isinstance(node.value.func, ast.Name):
+                        # Custom class instantiation - track for type annotations
+                        class_name = node.value.func.id
+                        self.parent.current_class_params.append({
+                            "name": param_name,
+                            "type": class_name,
+                            "call_node": node.value,
+                            "transformed_node": None,
+                            "type_annotation": ast.Name(id=class_name, ctx=ast.Load()),
                         })
         
         extractor = ParameterExtractor(self)
@@ -466,14 +476,43 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
                 param["type_annotation"] = type_annotation
                 break
     
+    def _assignment_needs_key_splitting(self, node: ast.Assign) -> bool:
+        """Check if an assignment contains subkey usage and needs key splitting."""
+        class SubkeyFinder(ast.NodeVisitor):
+            def __init__(self):
+                self.found_subkey = False
+            
+            def visit_Name(self, node):
+                if node.id == "subkey":
+                    self.found_subkey = True
+        
+        finder = SubkeyFinder()
+        finder.visit(node)
+        return finder.found_subkey
+    
+    def _is_custom_class_init(self, node: ast.Call) -> bool:
+        """Check if this is a custom class instantiation that needs a key."""
+        if isinstance(node.func, ast.Name):
+            # Check if this class name is in our tracked parameters
+            class_name = node.func.id
+            for param in self.current_class_params:
+                if param["type"] == class_name:
+                    return True
+        return False
+    
+    def _transform_custom_class_init(self, node: ast.Call) -> ast.Call:
+        """Transform custom class instantiation to include key parameter."""
+        # Add key parameter to custom class calls
+        self._add_key_to_call(node)
+        return node
+    
     def _add_key_to_call(self, call_node: ast.Call):
         """Add key parameter to a module call using functional key splitting."""
         # Check if key parameter already exists
         has_key = any(kw.arg == "key" for kw in call_node.keywords if kw.arg is not None)
         
         if not has_key:
-            # Create functional key splitting: key, subkey = jax.random.split(key)
-            # Add the subkey to the call
+            # Add the subkey to the call - the key splitting will be handled in visit_Assign
             key_keyword = ast.keyword(
                 arg="key",
                 value=ast.Name(id="subkey", ctx=ast.Load())
