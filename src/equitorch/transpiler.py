@@ -89,6 +89,54 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
             return self._transform_forward_method(node)
         return node
     
+    def visit_Assign(self, node: ast.Assign) -> list[ast.stmt]:  # noqa: N802
+        """Transform assignments, adding key splitting for module initializations."""
+        # First, recursively transform the assignment
+        node = self.generic_visit(node)  # type: ignore[assignment]
+        
+        # Check if this is a self.param = Module(...) assignment
+        if (len(node.targets) == 1 and
+            isinstance(node.targets[0], ast.Attribute) and
+            isinstance(node.targets[0].value, ast.Name) and
+            node.targets[0].value.id == "self" and
+            isinstance(node.value, ast.Call) and
+            self._is_pytorch_module_init(node.value)):
+            
+            # This is a module assignment - add key splitting
+            statements = []
+            
+            # Add key splitting: key, subkey = jax.random.split(key)
+            key_split = ast.Assign(
+                targets=[ast.Tuple(
+                    elts=[
+                        ast.Name(id="key", ctx=ast.Store()),
+                        ast.Name(id="subkey", ctx=ast.Store())
+                    ],
+                    ctx=ast.Store()
+                )],
+                value=ast.Call(
+                    func=ast.Attribute(
+                        value=ast.Attribute(
+                            value=ast.Name(id="jax", ctx=ast.Load()),
+                            attr="random",
+                            ctx=ast.Load()
+                        ),
+                        attr="split",
+                        ctx=ast.Load()
+                    ),
+                    args=[ast.Name(id="key", ctx=ast.Load())],
+                    keywords=[]
+                )
+            )
+            statements.append(key_split)
+            
+            # Add the original assignment (which now has subkey in the call)
+            statements.append(node)
+            
+            return statements
+        
+        return [node]
+    
     def visit_Call(self, node: ast.Call) -> ast.Call:  # noqa: N802
         """Using visitor pattern here now. nested calls are just handled recursively."""
         # First, recursively transform any nested calls
@@ -218,7 +266,11 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
         
         # Transform existing body
         for stmt in node.body:
-            new_body.append(self.visit(stmt))
+            result = self.visit(stmt)
+            if isinstance(result, list):
+                new_body.extend(result)
+            else:
+                new_body.append(result)
         
         node.body = new_body
         return node
@@ -248,8 +300,12 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
         return False
     
     def _transform_module_call(self, node: ast.Call) -> ast.Call:
-        """Transform self.module(x) -> jax.vmap(self.module)(x)."""
+        """Transform self.module(x) -> jax.vmap(self.module)(x) or special handling for RNNs."""
         module_name = node.func.attr  # type: ignore[attr-defined]
+        
+        # Check if this is an RNN call that needs special handling
+        if self._is_rnn_module_call(module_name):
+            return self._transform_rnn_call(node, module_name)
         
         # Create jax.vmap(self.module)(args)
         vmap_func = ast.Attribute(
@@ -291,6 +347,117 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
             return transform_method_call(node, method_name)
         return node
     
+    def _is_rnn_module_call(self, module_name: str) -> bool:
+        """Check if this is a call to an RNN-like module that needs scan."""
+        # Check if the module is an RNN type based on our parameter tracking
+        for param in self.current_class_params:
+            if param["name"] == module_name and param["type"] == "RNN":
+                return True
+        return False
+    
+    def _transform_rnn_call(self, node: ast.Call, module_name: str) -> ast.Call:
+        """Transform RNN calls to use jax.lax.scan for sequential processing."""
+        # For RNN calls like self.rnn(x, hidden), we need to use jax.lax.scan
+        # to process the sequence step by step
+        
+        # Create a scan function that processes one timestep
+        # def scan_fn(carry, x_t):
+        #     hidden = carry
+        #     new_hidden = self.rnn(x_t, hidden)
+        #     return new_hidden, new_hidden
+        
+        # For now, let's create a simplified version that uses jax.lax.scan
+        # This is a placeholder - the actual implementation would be more complex
+        scan_func = ast.Attribute(
+            value=ast.Attribute(
+                value=ast.Name(id="jax", ctx=ast.Load()),
+                attr="lax",
+                ctx=ast.Load(),
+            ),
+            attr="scan",
+            ctx=ast.Load(),
+        )
+        
+        # Create a lambda function for the scan operation
+        # lambda carry, x_t: (self.rnn(x_t, carry), self.rnn(x_t, carry))
+        rnn_call = ast.Call(
+            func=ast.Attribute(
+                value=ast.Name(id="self", ctx=ast.Load()),
+                attr=module_name,
+                ctx=ast.Load(),
+            ),
+            args=[
+                ast.Name(id="x_t", ctx=ast.Load()),
+                ast.Name(id="carry", ctx=ast.Load()),
+            ],
+            keywords=[],
+        )
+        
+        scan_lambda = ast.Lambda(
+            args=ast.arguments(
+                posonlyargs=[],
+                args=[
+                    ast.arg(arg="carry", annotation=None),
+                    ast.arg(arg="x_t", annotation=None),
+                ],
+                vararg=None,
+                kwonlyargs=[],
+                kw_defaults=[],
+                kwarg=None,
+                defaults=[],
+            ),
+            body=ast.Tuple(
+                elts=[rnn_call, rnn_call],
+                ctx=ast.Load(),
+            ),
+        )
+        
+        # Create the scan call: jax.lax.scan(scan_fn, init_hidden, x)
+        # We'll use the second argument as initial hidden state if provided
+        if len(node.args) >= 2:
+            init_carry = node.args[1]
+        else:
+            # Default hidden state
+            init_carry = ast.Call(
+                func=ast.Attribute(
+                    value=ast.Name(id="jnp", ctx=ast.Load()),
+                    attr="zeros",
+                    ctx=ast.Load(),
+                ),
+                args=[
+                    ast.Tuple(
+                        elts=[
+                            ast.Attribute(
+                                value=ast.Subscript(
+                                    value=node.args[0],
+                                    slice=ast.Constant(value=0),
+                                    ctx=ast.Load(),
+                                ),
+                                attr="shape",
+                                ctx=ast.Load(),
+                            ),
+                            ast.Attribute(
+                                value=ast.Name(id="self", ctx=ast.Load()),
+                                attr="hidden_size",
+                                ctx=ast.Load(),
+                            ),
+                        ],
+                        ctx=ast.Load(),
+                    )
+                ],
+                keywords=[],
+            )
+        
+        return ast.Call(
+            func=scan_func,
+            args=[
+                scan_lambda,
+                init_carry,
+                node.args[0],  # input sequence
+            ],
+            keywords=[],
+        )
+    
     def _store_type_annotation(self, original_node: ast.Call, type_annotation: ast.AST):
         """Store type annotation for a parameter based on its original call node."""
         # Find the parameter that corresponds to this call node
@@ -299,27 +466,43 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
                 param["type_annotation"] = type_annotation
                 break
     
+    def _add_key_to_call(self, call_node: ast.Call):
+        """Add key parameter to a module call using functional key splitting."""
+        # Check if key parameter already exists
+        has_key = any(kw.arg == "key" for kw in call_node.keywords if kw.arg is not None)
+        
+        if not has_key:
+            # Create functional key splitting: key, subkey = jax.random.split(key)
+            # Add the subkey to the call
+            key_keyword = ast.keyword(
+                arg="key",
+                value=ast.Name(id="subkey", ctx=ast.Load())
+            )
+            call_node.keywords.append(key_keyword)
+    
     def _transform_module_init(self, node: ast.Call) -> ast.Call:
         """Transform PyTorch module initialization to Equinox using modular converters."""
         module_type = node.func.attr  # type: ignore[attr-defined]
         if is_supported_module(module_type):
             converter = get_module_converter(module_type)
-            self.key_counter += 1
             
             # Track if this module needs a class definition to be injected
             self.required_class_definitions.add(module_type)
             
             # Call converter and handle both old and new interface
-            result = converter(node, self.key_counter - 1)
+            result = converter(node, 0)  # Pass 0 as key_counter since we'll use functional splitting
             
             # Check if converter returns tuple (new interface) or just node (old interface)
             if isinstance(result, tuple):
                 transformed_node, type_annotation = result
                 # Store the type annotation for this parameter
                 self._store_type_annotation(node, type_annotation)
+                # Add key parameter to the transformed node
+                self._add_key_to_call(transformed_node)
                 return transformed_node
             else:
-                # Old interface - just return the node
+                # Old interface - add key parameter
+                self._add_key_to_call(result)
                 return result
         return node
     

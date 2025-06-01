@@ -213,7 +213,7 @@ def get_required_custom_implementations(pytorch_modules: set[str]) -> dict[str, 
     return required_implementations
 
 
-def create_auto_transpiled_converter(module_name: str) -> Callable[[ast.Call, int], ast.Call]:
+def create_auto_transpiled_converter(module_name: str) -> Callable[[ast.Call, int], tuple[ast.Call, ast.AST]]:
     """Create a converter function for an auto-transpiled module.
     
     Args:
@@ -222,7 +222,7 @@ def create_auto_transpiled_converter(module_name: str) -> Callable[[ast.Call, in
     Returns:
         Converter function
     """
-    def converter(node: ast.Call, key_counter: int) -> ast.Call:
+    def converter(node: ast.Call, key_counter: int) -> tuple[ast.Call, ast.AST]:
         # Get the auto-transpiled class info
         class_def, type_annotation = auto_transpile_module(module_name)
         
@@ -231,11 +231,15 @@ def create_auto_transpiled_converter(module_name: str) -> Callable[[ast.Call, in
         keywords = list(node.keywords)
         keywords.append(ast.keyword(arg="key", value=ast.Name(id=key_name, ctx=ast.Load())))
         
-        return ast.Call(
+        transformed_node = ast.Call(
             func=ast.Name(id=type_annotation, ctx=ast.Load()),
             args=node.args,
             keywords=keywords,
         )
+        
+        type_annotation_ast = ast.Name(id=type_annotation, ctx=ast.Load())
+        
+        return transformed_node, type_annotation_ast
     
     return converter
 
@@ -276,7 +280,7 @@ def convert_linear(node: ast.Call, key_counter: int) -> tuple[ast.Call, ast.AST]
     return transformed_node, type_annotation
 
 
-def convert_conv(node: ast.Call, key_counter: int) -> ast.Call:
+def convert_conv(node: ast.Call, key_counter: int) -> tuple[ast.Call, ast.AST]:
     """Convert nn.Conv* to eqx.nn.Conv*."""
     conv_type = node.func.attr  # type: ignore[attr-defined]
     key_name = f"key_{key_counter}"
@@ -285,7 +289,7 @@ def convert_conv(node: ast.Call, key_counter: int) -> ast.Call:
     keywords.append(ast.keyword(arg="use_bias", value=ast.Constant(value=True)))
     keywords.append(ast.keyword(arg="key", value=ast.Name(id=key_name, ctx=ast.Load())))
     
-    return ast.Call(
+    transformed_node = ast.Call(
         func=ast.Attribute(
             value=ast.Attribute(
                 value=ast.Name(id="eqx", ctx=ast.Load()),
@@ -298,9 +302,21 @@ def convert_conv(node: ast.Call, key_counter: int) -> ast.Call:
         args=node.args,
         keywords=keywords,
     )
+    
+    type_annotation = ast.Attribute(
+        value=ast.Attribute(
+            value=ast.Name(id="eqx", ctx=ast.Load()),
+            attr="nn",
+            ctx=ast.Load(),
+        ),
+        attr=conv_type,
+        ctx=ast.Load(),
+    )
+    
+    return transformed_node, type_annotation
 
 
-def convert_batchnorm(node: ast.Call, key_counter: int) -> ast.Call:
+def convert_batchnorm(node: ast.Call, key_counter: int) -> tuple[ast.Call, ast.AST]:
     """Convert nn.BatchNorm* to eqx.nn.BatchNorm*."""
     bn_type = node.func.attr  # type: ignore[attr-defined]
     key_name = f"key_{key_counter}"
@@ -308,7 +324,7 @@ def convert_batchnorm(node: ast.Call, key_counter: int) -> ast.Call:
     keywords = list(node.keywords)
     keywords.append(ast.keyword(arg="key", value=ast.Name(id=key_name, ctx=ast.Load())))
     
-    return ast.Call(
+    transformed_node = ast.Call(
         func=ast.Attribute(
             value=ast.Attribute(
                 value=ast.Name(id="eqx", ctx=ast.Load()),
@@ -321,16 +337,28 @@ def convert_batchnorm(node: ast.Call, key_counter: int) -> ast.Call:
         args=node.args,
         keywords=keywords,
     )
+    
+    type_annotation = ast.Attribute(
+        value=ast.Attribute(
+            value=ast.Name(id="eqx", ctx=ast.Load()),
+            attr="nn",
+            ctx=ast.Load(),
+        ),
+        attr=bn_type,
+        ctx=ast.Load(),
+    )
+    
+    return transformed_node, type_annotation
 
 
-def convert_dropout(node: ast.Call, key_counter: int) -> ast.Call:
+def convert_dropout(node: ast.Call, key_counter: int) -> tuple[ast.Call, ast.AST]:
     """Convert nn.Dropout to eqx.nn.Dropout."""
     key_name = f"key_{key_counter}"
     
     keywords = list(node.keywords)
     keywords.append(ast.keyword(arg="key", value=ast.Name(id=key_name, ctx=ast.Load())))
     
-    return ast.Call(
+    transformed_node = ast.Call(
         func=ast.Attribute(
             value=ast.Attribute(
                 value=ast.Name(id="eqx", ctx=ast.Load()),
@@ -343,6 +371,18 @@ def convert_dropout(node: ast.Call, key_counter: int) -> ast.Call:
         args=node.args,
         keywords=keywords,
     )
+    
+    type_annotation = ast.Attribute(
+        value=ast.Attribute(
+            value=ast.Name(id="eqx", ctx=ast.Load()),
+            attr="nn",
+            ctx=ast.Load(),
+        ),
+        attr="Dropout",
+        ctx=ast.Load(),
+    )
+    
+    return transformed_node, type_annotation
 
 
 def get_module_converter(module_name: str) -> Callable[[ast.Call, int], ast.Call]:
@@ -407,19 +447,23 @@ def is_supported_module(module_name: str) -> bool:
         return False
 
 
-def convert_rnn(node: ast.Call, key_counter: int) -> ast.Call:
+def convert_rnn(node: ast.Call, key_counter: int) -> tuple[ast.Call, ast.AST]:
     """Convert nn.RNN using the generic custom module system."""
-    return create_custom_module_converter("RNN")(node, key_counter)
+    transformed_node = create_custom_module_converter("RNN")(node, key_counter)
+    
+    type_annotation = ast.Name(id="ElmanRNNCell", ctx=ast.Load())
+    
+    return transformed_node, type_annotation
 
 
-def convert_lstm(node: ast.Call, key_counter: int) -> ast.Call:
+def convert_lstm(node: ast.Call, key_counter: int) -> tuple[ast.Call, ast.AST]:
     """Convert nn.LSTM to eqx.nn.LSTMCell."""
     key_name = f"key_{key_counter}"
     
     keywords = list(node.keywords)
     keywords.append(ast.keyword(arg="key", value=ast.Name(id=key_name, ctx=ast.Load())))
     
-    return ast.Call(
+    transformed_node = ast.Call(
         func=ast.Attribute(
             value=ast.Attribute(
                 value=ast.Name(id="eqx", ctx=ast.Load()),
@@ -432,6 +476,18 @@ def convert_lstm(node: ast.Call, key_counter: int) -> ast.Call:
         args=node.args[:2],  # Only take input_size and hidden_size
         keywords=keywords,
     )
+    
+    type_annotation = ast.Attribute(
+        value=ast.Attribute(
+            value=ast.Name(id="eqx", ctx=ast.Load()),
+            attr="nn",
+            ctx=ast.Load(),
+        ),
+        attr="LSTMCell",
+        ctx=ast.Load(),
+    )
+    
+    return transformed_node, type_annotation
 
 
 def convert_parameter(node: ast.Call, key_counter: int) -> tuple[ast.Call, ast.AST]:  # noqa: ARG001
