@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import pytest
+from syrupy import SnapshotAssertion
 
 from equitorch.transpiler import transpile
 
@@ -11,7 +12,7 @@ def resources_dir():
     return Path(__file__).parent / ".." / "resources"
 
 
-def test_mlp_transpilation(resources_dir):
+def test_mlp_transpilation(resources_dir, snapshot_equinox_code: SnapshotAssertion):
     """Test transpilation of a PyTorch MLP to Equinox."""
     # Read the PyTorch MLP example code
     pytorch_code = Path(resources_dir / "networks/pytorch_mlp_example.py").resolve().read_text()
@@ -31,8 +32,10 @@ def test_mlp_transpilation(resources_dir):
     assert "jax.vmap(self.fc1)" in equinox_code
     assert "jax.vmap(self.fc2)" in equinox_code
 
+    assert equinox_code == snapshot_equinox_code
 
-def test_cnn_transpilation(resources_dir):
+
+def test_cnn_transpilation(resources_dir, snapshot_equinox_code: SnapshotAssertion):
     """Test transpilation of a PyTorch CNN to Equinox."""
     # Read the PyTorch CNN example code
     pytorch_cnn_code = Path(resources_dir / "networks/pytorch_cnn_example.py").resolve().read_text()
@@ -52,3 +55,5 @@ def test_cnn_transpilation(resources_dir):
     assert "jax.nn.relu" in equinox_cnn_code
     assert "jax.nn.max_pool" in equinox_cnn_code
     assert "jnp.reshape" in equinox_cnn_code
+
+    assert equinox_cnn_code == snapshot_equinox_code
