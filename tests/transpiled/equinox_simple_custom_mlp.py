@@ -24,11 +24,13 @@ class CustomLinear(eqx.Module):
             self.bias = None
 
     def __call__(self, x):
-        return F.linear(x, self.weight, self.bias)
+        """Forward pass using functional linear."""
+        return jnp.dot(x, self.weight.T) + self.bias
 
 class SimpleMLP(eqx.Module):
     layer1: CustomLinear
     layer2: CustomLinear
+    'A simple MLP that uses custom linear layers to test recursive transpilation.'
 
     def __init__(self, input_size, hidden_size, output_size, key=None, **kwargs):
         if key is None:
@@ -40,6 +42,7 @@ class SimpleMLP(eqx.Module):
         self.layer2 = CustomLinear(hidden_size, output_size, key=subkey)
 
     def __call__(self, x):
+        """Forward pass through the MLP."""
         x = jax.nn.relu(jax.vmap(self.layer1)(x))
         x = jax.vmap(self.layer2)(x)
         return x

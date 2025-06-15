@@ -621,11 +621,11 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
         return node
     
     def _get_required_class_definitions(self) -> list[ast.stmt]:
-        """Generate AST nodes for required class definitions using the generic system."""
+        """Generate AST nodes for required class definitions using the unified system."""
         from .converters.module_converters import (
             get_required_custom_implementations,
             auto_transpile_module,
-            PYTORCH_TO_CUSTOM_MAPPING,
+            MODULE_CONFIGS,
         )
         
         class_definitions = []
@@ -638,13 +638,10 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
             class_ast = ast.parse(class_code)
             class_definitions.extend(class_ast.body)
         
-        # Handle auto-transpiled modules (those not in custom mappings and not in manual mappings)
-        from .converters.module_converters import MODULE_MAPPINGS
-        
+        # Handle auto-transpiled modules (those not in MODULE_CONFIGS)
         for pytorch_module in self.required_class_definitions:
-            if (pytorch_module not in PYTORCH_TO_CUSTOM_MAPPING and 
-                pytorch_module not in MODULE_MAPPINGS):
-                # This is an auto-transpiled class (not custom, not manual)
+            if pytorch_module not in MODULE_CONFIGS:
+                # This is an auto-transpiled class (not in our configured modules)
                 try:
                     class_def_str, _ = auto_transpile_module(pytorch_module)
                     class_ast = ast.parse(class_def_str)
