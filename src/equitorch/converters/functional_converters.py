@@ -99,35 +99,54 @@ def transform_simple_functional(node: ast.Call, new_module: str, new_func: str) 
 
 
 def transform_max_pool(node: ast.Call, new_module: str, new_func: str, func_name: str) -> ast.Call:  # noqa: ARG001 TODO: remove temporary noqa
-    """Transform max_pool with proper parameter mapping.
+    """Transform max_pool with proper parameter mapping using jax.scipy.signal.pool.
     
     Args:
         node: The AST Call node
-        new_module: Target module ('jax.nn')
-        new_func: Target function ('max_pool')
+        new_module: Target module (unused)
+        new_func: Target function (unused)
         func_name: Original function name for dimension info
         
     Returns:
-        Transformed AST Call node
+        Transformed AST Call node using jax.scipy.signal.pool
     """
-    # Create jax.nn.max_pool function reference
-    new_func_ref = ast.Attribute(
-        value=ast.Attribute(
-            value=ast.Name(id="jax", ctx=ast.Load()),
-            attr="nn",
-            ctx=ast.Load(),
-        ),
-        attr="max_pool",
-        ctx=ast.Load(),
-    )
+    if len(node.args) < 2:
+        return node  # Invalid call
     
-    # For now, use simplified parameter mapping
-    # Full implementation would handle window_shape, strides, padding conversion
-    return ast.Call(
-        func=new_func_ref,
-        args=node.args,
-        keywords=node.keywords,
-    )
+    try:
+        # Extract arguments
+        input_tensor = node.args[0]
+        kernel_size = node.args[1]
+        
+        # Convert AST nodes to code strings
+        input_str = ast.unparse(input_tensor)
+        kernel_str = ast.unparse(kernel_size)
+        
+        # Extract stride if provided, otherwise default to kernel_size
+        if len(node.args) > 2:
+            stride_str = ast.unparse(node.args[2])
+        else:
+            stride_str = kernel_str
+        
+        # Build target code string using jax.lax.reduce_window
+        # For Equinox single-example processing with 3D tensors (channels, height, width),
+        # use 3D window dimensions: (1, kernel_size, kernel_size)
+        target_code = f"""jax.lax.reduce_window(
+            {input_str},
+            -jnp.inf,
+            jax.lax.max,
+            (1, {kernel_str}, {kernel_str}),
+            (1, {stride_str}, {stride_str}),
+            'VALID'
+        )"""
+        
+        # Parse back to AST and return the expression
+        parsed = ast.parse(target_code, mode='eval')
+        return parsed.body
+        
+    except Exception:
+        # Fallback to original node if anything goes wrong
+        return node
 
 
 def transform_torch_flatten(node: ast.Call) -> ast.Call:

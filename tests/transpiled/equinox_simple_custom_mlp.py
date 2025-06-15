@@ -1,9 +1,6 @@
 import jax
 import jax.numpy as jnp
 import equinox as eqx
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
 
 class CustomLinear(eqx.Module):
     weight: jnp.ndarray
@@ -12,7 +9,6 @@ class CustomLinear(eqx.Module):
     def __init__(self, in_features, out_features, bias=True, key=None, **kwargs):
         if key is None:
             key = jax.random.PRNGKey(0)
-        super().__init__()
         self.in_features = in_features
         self.out_features = out_features
         key, subkey = jax.random.split(key)
@@ -35,7 +31,6 @@ class SimpleMLP(eqx.Module):
     def __init__(self, input_size, hidden_size, output_size, key=None, **kwargs):
         if key is None:
             key = jax.random.PRNGKey(0)
-        super().__init__()
         key, subkey = jax.random.split(key)
         self.layer1 = CustomLinear(input_size, hidden_size, key=subkey)
         key, subkey = jax.random.split(key)

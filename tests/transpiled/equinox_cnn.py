@@ -1,8 +1,6 @@
 import jax
 import jax.numpy as jnp
 import equinox as eqx
-import torch.nn as nn
-import torch.nn.functional as F
 
 class SimpleCNN(eqx.Module):
     conv1: eqx.nn.Conv2d
@@ -12,7 +10,6 @@ class SimpleCNN(eqx.Module):
     def __init__(self, in_channels, num_classes, key=None, **kwargs):
         if key is None:
             key = jax.random.PRNGKey(0)
-        super(SimpleCNN, self).__init__()
         key, subkey = jax.random.split(key)
         self.conv1 = eqx.nn.Conv2d(in_channels=in_channels, out_channels=16, kernel_size=3, stride=1, padding=1, use_bias=True, key=subkey)
         key, subkey = jax.random.split(key)
@@ -21,10 +18,10 @@ class SimpleCNN(eqx.Module):
         self.fc = eqx.nn.Linear(32 * 7 * 7, num_classes, use_bias=True, key=subkey)
 
     def __call__(self, x):
-        x = jax.nn.relu(jax.vmap(self.conv1)(x))
-        x = jax.nn.max_pool(x, 2)
-        x = jax.nn.relu(jax.vmap(self.conv2)(x))
-        x = jax.nn.max_pool(x, 2)
-        x = jnp.reshape(x, (x.shape[0], -1))
-        x = jax.vmap(self.fc)(x)
+        x = jax.nn.relu(self.conv1(x))
+        x = jax.lax.reduce_window(x, -jnp.inf, jax.lax.max, (1, 2, 2), (1, 2, 2), 'VALID')
+        x = jax.nn.relu(self.conv2(x))
+        x = jax.lax.reduce_window(x, -jnp.inf, jax.lax.max, (1, 2, 2), (1, 2, 2), 'VALID')
+        x = jnp.ravel(x)
+        x = self.fc(x)
         return x

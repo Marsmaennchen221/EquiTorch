@@ -48,17 +48,37 @@ def transform_method_call(node: ast.Call, method_name: str) -> ast.Call:
 
 
 def transform_reshape(node: ast.Call) -> ast.Call:
-    """Transform x.view(...) or x.reshape(...) to jnp.reshape(x, ...).
+    """Transform x.view(...) or x.reshape(...) to appropriate JAX operation.
+    
+    For Equinox single-example processing, use jnp.ravel for flattening operations.
     
     Args:
         node: The AST Call node for tensor.view() or tensor.reshape()
         
     Returns:
-        Transformed AST Call node for jnp.reshape()
+        Transformed AST Call node
     """
     input_tensor = node.func.value  # type: ignore[attr-defined]
     
-    # Create shape tuple from arguments
+    # Check if this is a flattening operation like x.view(x.shape[0], -1) or x.view(batch_size, -1)
+    # Note: -1 is represented as ast.UnaryOp(op=ast.USub(), operand=ast.Constant(value=1))
+    is_negative_one = (isinstance(node.args[1], ast.UnaryOp) and
+                       isinstance(node.args[1].op, ast.USub) and
+                       isinstance(node.args[1].operand, ast.Constant) and
+                       node.args[1].operand.value == 1)
+    
+    if (len(node.args) == 2 and is_negative_one):
+        # This is a flattening operation - use jnp.ravel for single example processing
+        return ast.Call(
+            func=ast.Attribute(
+                value=ast.Name(id="jnp", ctx=ast.Load()),
+                attr="ravel",
+                ctx=ast.Load(),
+            ),
+            args=[input_tensor],
+            keywords=[],
+        )
+    # For other reshape operations, use jnp.reshape
     if node.args:
         shape = ast.Tuple(elts=list(node.args), ctx=ast.Load())
     else:
@@ -76,48 +96,25 @@ def transform_reshape(node: ast.Call) -> ast.Call:
 
 
 def transform_tensor_flatten(node: ast.Call) -> ast.Call:
-    """Transform x.flatten() to jnp.reshape(x, (x.shape[0], -1)).
+    """Transform x.flatten() to jnp.ravel(x) for single example processing.
     
     Args:
         node: The AST Call node for tensor.flatten()
         
     Returns:
-        Transformed AST Call node for jnp.reshape()
+        Transformed AST Call node for jnp.ravel()
     """
     input_tensor = node.func.value  # type: ignore[attr-defined]
     
-    # Handle flatten with start_dim parameter
-    start_dim = 1  # Default start dimension
-    if node.args and len(node.args) > 0 and isinstance(node.args[0], ast.Constant):  # If start_dim is provided as argument
-        start_dim = node.args[0].value
-    
-    # Create shape tuple for flattening
-    shape_elements: list[ast.expr]
-    if start_dim == 0:
-        # Flatten everything: (-1,)
-        shape_elements = [ast.Constant(value=-1)]
-    else:
-        # Keep first start_dim dimensions, flatten the rest: (x.shape[0], ..., x.shape[start_dim-1], -1)
-        shape_elements = []
-        for i in range(start_dim):
-            shape_elements.append(
-                ast.Subscript(
-                    value=ast.Attribute(value=input_tensor, attr="shape", ctx=ast.Load()),
-                    slice=ast.Constant(value=i),
-                    ctx=ast.Load(),
-                ),
-            )
-        shape_elements.append(ast.Constant(value=-1))
-    
-    shape_tuple = ast.Tuple(elts=shape_elements, ctx=ast.Load())
-    
+    # For Equinox models that process single examples, use jnp.ravel
+    # This flattens the tensor completely, which is appropriate for single examples
     return ast.Call(
         func=ast.Attribute(
             value=ast.Name(id="jnp", ctx=ast.Load()),
-            attr="reshape",
+            attr="ravel",
             ctx=ast.Load(),
         ),
-        args=[input_tensor, shape_tuple],
+        args=[input_tensor],
         keywords=[],
     )
 

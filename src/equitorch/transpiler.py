@@ -31,9 +31,40 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
         self.key_counter = 0
         self.required_class_definitions = set()  # Track classes that need to be injected
     
+    def _filter_pytorch_imports(self, body: list[ast.stmt]) -> list[ast.stmt]:
+        """Filter out PyTorch imports from the module body.
+        
+        Args:
+            body: List of AST statements from module body
+            
+        Returns:
+            Filtered list without PyTorch imports
+        """
+        filtered_body = []
+        pytorch_modules = {'torch', 'torch.nn', 'torch.nn.functional'}
+        
+        for stmt in body:
+            if isinstance(stmt, ast.Import):
+                # Filter out PyTorch imports
+                filtered_names = []
+                for alias in stmt.names:
+                    if not any(alias.name.startswith(pytorch_mod) for pytorch_mod in pytorch_modules):
+                        filtered_names.append(alias)
+                if filtered_names:
+                    stmt.names = filtered_names
+                    filtered_body.append(stmt)
+            elif isinstance(stmt, ast.ImportFrom):
+                # Filter out PyTorch from imports
+                if stmt.module and not any(stmt.module.startswith(pytorch_mod) for pytorch_mod in pytorch_modules):
+                    filtered_body.append(stmt)
+            else:
+                filtered_body.append(stmt)
+        
+        return filtered_body
+    
     def visit_Module(self, node: ast.Module) -> ast.Module:  # noqa: N802
         """Transform the entire module."""
-        # Add imports at the top
+        # Add JAX/Equinox imports at the top
         imports = [
             ast.Import(names=[ast.alias(name="jax", asname=None)]),
             ast.Import(names=[ast.alias(name="jax.numpy", asname="jnp")]),
@@ -43,11 +74,14 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
         # Transform the rest of the module
         new_node: ast.Module = self.generic_visit(node)  # type: ignore[assignment]
         
+        # Filter out PyTorch imports
+        filtered_body = self._filter_pytorch_imports(new_node.body)
+        
         # Inject required class definitions
         class_definitions = self._get_required_class_definitions()
         
         # Prepend imports and append class definitions
-        new_node.body = imports + new_node.body + class_definitions
+        new_node.body = imports + filtered_body + class_definitions
         
         return new_node
     
@@ -274,8 +308,11 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
         )
         new_body.append(key_init)
         
-        # Transform existing body
+        # Transform existing body, filtering out any statements containing super() calls
         for stmt in node.body:
+            if self._contains_super_call(stmt):
+                continue  # Skip any statement that contains a super() call
+            
             result = self.visit(stmt)
             if isinstance(result, list):
                 new_body.extend(result)
@@ -311,14 +348,19 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
         return False
     
     def _transform_module_call(self, node: ast.Call) -> ast.Call:
-        """Transform self.module(x) -> jax.vmap(self.module)(x) or special handling for RNNs."""
+        """Transform self.module(x) -> direct call or jax.vmap(self.module)(x) based on module type."""
         module_name = node.func.attr  # type: ignore[attr-defined]
         
         # Check if this is an RNN call that needs special handling
         if self._is_rnn_module_call(module_name):
             return self._transform_rnn_call(node, module_name)
         
-        # Create jax.vmap(self.module)(args)
+        # Check if this module handles batches natively (Conv2d, Linear, etc.)
+        if self._module_handles_batches_natively(module_name):
+            # For modules that handle batches natively, just call them directly
+            return node
+        
+        # For other modules, use vmap
         vmap_func = ast.Attribute(
             value=ast.Name(id="jax", ctx=ast.Load()),
             attr="vmap",
@@ -368,6 +410,30 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
             if param["name"] == module_name and param["type"] in RNN_MODULE_TYPES:
                 return True
         return False
+    
+    def _module_handles_batches_natively(self, module_name: str) -> bool:
+        """Check if a module handles batches natively and doesn't need vmap."""
+        # Get the module type for this parameter
+        module_type = None
+        for param in self.current_class_params:
+            if param["name"] == module_name:
+                module_type = param["type"]
+                break
+        
+        if module_type is None:
+            return False
+        
+        # Modules that handle batches natively in Equinox
+        # Actually, in Equinox, ALL layers operate on single examples, and batching
+        # is handled with vmap at the top level (not inside the model)
+        # So we should NOT use vmap for any layers inside the model
+        BATCH_NATIVE_MODULES = {
+            "Linear", "Conv1d", "Conv2d", "Conv3d", "ConvTranspose1d", 
+            "ConvTranspose2d", "ConvTranspose3d", "BatchNorm1d", "BatchNorm2d", 
+            "BatchNorm3d", "LayerNorm", "GroupNorm", "Dropout", "Embedding"
+        }
+        
+        return module_type in BATCH_NATIVE_MODULES
     
     def _get_rnn_type(self, module_name: str) -> str:
         """Get the RNN type for a given module name."""
@@ -550,6 +616,21 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
             if param["call_node"] is original_node:
                 param["type_annotation"] = type_annotation
                 break
+    
+    def _contains_super_call(self, node: ast.AST) -> bool:
+        """Recursively check if an AST node contains a super() call anywhere."""
+        class SuperCallFinder(ast.NodeVisitor):
+            def __init__(self):
+                self.found_super = False
+            
+            def visit_Call(self, node):
+                if (isinstance(node.func, ast.Name) and node.func.id == "super"):
+                    self.found_super = True
+                self.generic_visit(node)  # Continue searching in child nodes
+        
+        finder = SuperCallFinder()
+        finder.visit(node)
+        return finder.found_super
     
     def _assignment_needs_key_splitting(self, node: ast.Assign) -> bool:
         """Check if an assignment contains subkey usage and needs key splitting."""
