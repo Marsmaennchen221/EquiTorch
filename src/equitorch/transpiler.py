@@ -299,7 +299,8 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
     
     def _is_functional_call(self, node: ast.Call) -> bool:
         """Check if this is a F.function(x) or torch.function(x) call."""
-        return (isinstance(node.func.value, ast.Name) and  # type: ignore[attr-defined]
+        return (isinstance(node.func, ast.Attribute) and
+                isinstance(node.func.value, ast.Name) and
                 node.func.value.id in ["F", "torch"])  # type: ignore[attr-defined]
     
     def _is_pytorch_module_init(self, node: ast.Call) -> bool:
@@ -359,37 +360,26 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
     
     def _is_rnn_module_call(self, module_name: str) -> bool:
         """Check if this is a call to an RNN-like module that needs scan."""
+        # Extended RNN type mapping
+        RNN_MODULE_TYPES = {"RNN", "LSTM", "GRU", "RNNCell", "LSTMCell", "GRUCell"}
+        
         # Check if the module is an RNN type based on our parameter tracking
         for param in self.current_class_params:
-            if param["name"] == module_name and param["type"] == "RNN":
+            if param["name"] == module_name and param["type"] in RNN_MODULE_TYPES:
                 return True
         return False
     
-    def _transform_rnn_call(self, node: ast.Call, module_name: str) -> ast.Call:
-        """Transform RNN calls to use jax.lax.scan for sequential processing."""
-        # For RNN calls like self.rnn(x, hidden), we need to use jax.lax.scan
-        # to process the sequence step by step
+    def _get_rnn_type(self, module_name: str) -> str:
+        """Get the RNN type for a given module name."""
+        for param in self.current_class_params:
+            if param["name"] == module_name:
+                return param["type"]
+        return "RNN"  # Default fallback
+    
+    def _create_rnn_scan_function(self, rnn_type: str, module_name: str) -> ast.Lambda:
+        """Create proper scan function based on RNN type."""
         
-        # Create a scan function that processes one timestep
-        # def scan_fn(carry, x_t):
-        #     hidden = carry
-        #     new_hidden = self.rnn(x_t, hidden)
-        #     return new_hidden, new_hidden
-        
-        # For now, let's create a simplified version that uses jax.lax.scan
-        # This is a placeholder - the actual implementation would be more complex
-        scan_func = ast.Attribute(
-            value=ast.Attribute(
-                value=ast.Name(id="jax", ctx=ast.Load()),
-                attr="lax",
-                ctx=ast.Load(),
-            ),
-            attr="scan",
-            ctx=ast.Load(),
-        )
-        
-        # Create a lambda function for the scan operation
-        # lambda carry, x_t: (self.rnn(x_t, carry), self.rnn(x_t, carry))
+        # Create a single RNN call that we'll reuse
         rnn_call = ast.Call(
             func=ast.Attribute(
                 value=ast.Name(id="self", ctx=ast.Load()),
@@ -403,31 +393,79 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
             keywords=[],
         )
         
-        scan_lambda = ast.Lambda(
+        # Create lambda that returns (new_carry, output)
+        # For simple RNNs, both are the same (the new hidden state)
+        return ast.Lambda(
             args=ast.arguments(
                 posonlyargs=[],
                 args=[
                     ast.arg(arg="carry", annotation=None),
                     ast.arg(arg="x_t", annotation=None),
                 ],
-                vararg=None,
-                kwonlyargs=[],
-                kw_defaults=[],
-                kwarg=None,
-                defaults=[],
+                vararg=None, kwonlyargs=[], kw_defaults=[], kwarg=None, defaults=[],
             ),
             body=ast.Tuple(
-                elts=[rnn_call, rnn_call],
+                elts=[rnn_call, rnn_call],  # (new_carry, output)
                 ctx=ast.Load(),
             ),
         )
+    
+    def _transform_rnn_call(self, node: ast.Call, module_name: str) -> ast.Call:
+        """Transform RNN calls to use jax.lax.scan for sequential processing."""
+        # For RNN calls like self.rnn(x, hidden), we need to use jax.lax.scan
+        # to process the sequence step by step
         
-        # Create the scan call: jax.lax.scan(scan_fn, init_hidden, x)
-        # We'll use the second argument as initial hidden state if provided
+        # Get RNN type for this module
+        rnn_type = self._get_rnn_type(module_name)
+        
+        # Create the scan function
+        scan_func = ast.Attribute(
+            value=ast.Attribute(
+                value=ast.Name(id="jax", ctx=ast.Load()),
+                attr="lax",
+                ctx=ast.Load(),
+            ),
+            attr="scan",
+            ctx=ast.Load(),
+        )
+        
+        # Create a proper scan function based on RNN type
+        scan_lambda = self._create_rnn_scan_function(rnn_type, module_name)
+        
+        # Handle input arguments - need to transpose for scan if batch_first=True
+        input_seq = node.args[0]
+        
+        # Create transposed input for scan (batch_first=True means we need seq_first)
+        transposed_input = ast.Call(
+            func=ast.Attribute(
+                value=input_seq,
+                attr="transpose",
+                ctx=ast.Load(),
+            ),
+            args=[
+                ast.Tuple(
+                    elts=[
+                        ast.Constant(value=1),  # seq_len
+                        ast.Constant(value=0),  # batch_size
+                        ast.Constant(value=2),  # features
+                    ],
+                    ctx=ast.Load(),
+                ),
+            ],
+            keywords=[],
+        )
+        
+        # Handle initial hidden state
         if len(node.args) >= 2:
             init_carry = node.args[1]
+            # Remove the first dimension (num_layers=1) and transpose
+            init_carry = ast.Subscript(
+                value=init_carry,
+                slice=ast.Constant(value=0),
+                ctx=ast.Load(),
+            )
         else:
-            # Default hidden state
+            # Default hidden state - create zeros with proper shape
             init_carry = ast.Call(
                 func=ast.Attribute(
                     value=ast.Name(id="jnp", ctx=ast.Load()),
@@ -437,15 +475,14 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
                 args=[
                     ast.Tuple(
                         elts=[
-                            ast.Attribute(
-                                value=ast.Subscript(
-                                    value=node.args[0],
-                                    slice=ast.Constant(value=0),
+                            ast.Subscript(
+                                value=input_seq,
+                                slice=ast.Tuple(
+                                    elts=[ast.Constant(value=0)],
                                     ctx=ast.Load(),
                                 ),
-                                attr="shape",
                                 ctx=ast.Load(),
-                            ),
+                            ),  # batch_size
                             ast.Attribute(
                                 value=ast.Name(id="self", ctx=ast.Load()),
                                 attr="hidden_size",
@@ -453,19 +490,57 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
                             ),
                         ],
                         ctx=ast.Load(),
-                    )
+                    ),
                 ],
                 keywords=[],
             )
         
-        return ast.Call(
+        # Create the scan call: final_carry, outputs = jax.lax.scan(scan_fn, init_carry, input_seq)
+        scan_call = ast.Call(
             func=scan_func,
             args=[
                 scan_lambda,
                 init_carry,
-                node.args[0],  # input sequence
+                transposed_input,
             ],
             keywords=[],
+        )
+        
+        # Return tuple (outputs, final_carry) to match PyTorch RNN API
+        # Note: outputs need to be transposed back to batch_first format
+        outputs_transposed = ast.Call(
+            func=ast.Attribute(
+                value=ast.Subscript(
+                    value=scan_call,
+                    slice=ast.Constant(value=1),
+                    ctx=ast.Load(),
+                ),
+                attr="transpose",
+                ctx=ast.Load(),
+            ),
+            args=[
+                ast.Tuple(
+                    elts=[
+                        ast.Constant(value=1),  # batch_size
+                        ast.Constant(value=0),  # seq_len
+                        ast.Constant(value=2),  # features
+                    ],
+                    ctx=ast.Load(),
+                ),
+            ],
+            keywords=[],
+        )
+        
+        return ast.Tuple(
+            elts=[
+                outputs_transposed,
+                ast.Subscript(
+                    value=scan_call,
+                    slice=ast.Constant(value=0),
+                    ctx=ast.Load(),
+                ),  # final_carry
+            ],
+            ctx=ast.Load(),
         )
     
     def _store_type_annotation(self, original_node: ast.Call, type_annotation: ast.AST):

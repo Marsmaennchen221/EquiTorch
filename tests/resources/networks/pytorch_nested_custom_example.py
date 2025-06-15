@@ -63,8 +63,6 @@ class NestedCustomCNN(nn.Module):
         x = self.classifier(x)
         
         return x
-
-
 class CustomResidualBlock(nn.Module):
     """A custom residual block that uses auto-transpiled modules."""
     
@@ -104,27 +102,18 @@ class CustomResidualBlock(nn.Module):
         out = torch.relu(out)
         
         return out
-
-
 class DeepNestedCNN(nn.Module):
     """A deep CNN that nests the custom residual blocks to test deep recursion."""
     
     def __init__(self, input_channels, num_classes):
         super().__init__()
-        
-        # Initial conv with manual converter
         self.initial_conv = nn.Conv2d(input_channels, 64, kernel_size=7, stride=2, padding=3)
         self.initial_bn = nn.BatchNorm2d(64)
-        
-        # Nested custom blocks (these will trigger recursive transpilation)
         self.block1 = CustomResidualBlock(64, 64)
         self.block2 = CustomResidualBlock(64, 128)
         self.block3 = CustomResidualBlock(128, 256)
-        
-        # Auto-transpiled pooling and normalization
         self.global_pool = nn.AdaptiveAvgPool2d((1, 1))  # Auto-transpiled
         
-        # Final classifier with auto-transpiled LayerNorm
         self.classifier = nn.Sequential(
             nn.Linear(256, 128),     # Manual converter
             nn.LayerNorm(128),       # Auto-transpiled

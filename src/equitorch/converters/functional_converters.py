@@ -49,6 +49,8 @@ def transform_functional_call(node: ast.Call, module_name: str, func_name: str) 
         return transform_max_pool(node, new_module, new_func, func_name)
     if func_name == "flatten" and module_name == "torch":
         return transform_torch_flatten(node)
+    if func_name == "zeros" and module_name == "torch":
+        return transform_torch_zeros(node)
     # Simple mapping - just change the function reference
     return transform_simple_functional(node, new_module, new_func)
 
@@ -156,6 +158,33 @@ def transform_torch_flatten(node: ast.Call) -> ast.Call:
         ),
         args=[input_tensor, shape_tuple],
         keywords=[],
+    )
+
+
+def transform_torch_zeros(node: ast.Call) -> ast.Call:
+    """Transform torch.zeros to jnp.zeros with proper shape tuple.
+    
+    Args:
+        node: The AST Call node for torch.zeros
+        
+    Returns:
+        Transformed AST Call node for jnp.zeros
+    """
+    # Convert arguments to a shape tuple
+    # torch.zeros(1, 2, 3) -> jnp.zeros((1, 2, 3))
+    if node.args:
+        shape_tuple = ast.Tuple(elts=list(node.args), ctx=ast.Load())
+    else:
+        shape_tuple = ast.Tuple(elts=[], ctx=ast.Load())
+    
+    return ast.Call(
+        func=ast.Attribute(
+            value=ast.Name(id="jnp", ctx=ast.Load()),
+            attr="zeros",
+            ctx=ast.Load(),
+        ),
+        args=[shape_tuple],
+        keywords=node.keywords,
     )
 
 

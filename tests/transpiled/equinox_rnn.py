@@ -4,8 +4,31 @@ import equinox as eqx
 import torch
 import torch.nn as nn
 
+class RNN(eqx.Module):
+    rnn: ElmanRNNCell
+    fc: eqx.nn.Linear
+
+    def __init__(self, input_size, hidden_size, output_size, key=None, **kwargs):
+        if key is None:
+            key = jax.random.PRNGKey(0)
+        super().__init__()
+        self.hidden_size = hidden_size
+        key, subkey = jax.random.split(key)
+        self.rnn = ElmanRNNCell(input_size, hidden_size, key=subkey)
+        key, subkey = jax.random.split(key)
+        self.fc = eqx.nn.Linear(hidden_size, output_size, use_bias=True, key=subkey)
+
+    def __call__(self, x, hidden=None):
+        if hidden is None:
+            hidden = jnp.zeros((1, x.shape[0], self.hidden_size))
+        output, hidden = (jax.lax.scan(lambda carry, x_t: (self.rnn(x_t, carry), self.rnn(x_t, carry)), hidden[0], x.transpose((1, 0, 2)))[1].transpose((1, 0, 2)), jax.lax.scan(lambda carry, x_t: (self.rnn(x_t, carry), self.rnn(x_t, carry)), hidden[0], x.transpose((1, 0, 2)))[0])
+        output = jax.vmap(self.fc)(output[:, -1, :])
+        return (output, hidden)
+
+    def init_hidden(self, batch_size):
+        return torch.zeros(1, batch_size, self.hidden_size)
+
 class ElmanRNNCell(eqx.Module):
-    """Elman RNN Cell implementation matching PyTorch's nn.RNN behavior."""
     input_size: int
     hidden_size: int
     weight_ih: jnp.ndarray
@@ -26,27 +49,3 @@ class ElmanRNNCell(eqx.Module):
     def __call__(self, input: jnp.ndarray, hidden: jnp.ndarray) -> jnp.ndarray:
         """Forward pass: h_t = tanh(W_ih @ x_t + W_hh @ h_{t-1} + b_ih + b_hh)"""
         return jnp.tanh(jnp.dot(self.weight_ih, input) + jnp.dot(self.weight_hh, hidden) + self.bias_ih + self.bias_hh)
-
-class RNN(eqx.Module):
-    rnn: ElmanRNNCell
-    fc: eqx.nn.Linear
-
-    def __init__(self, input_size, hidden_size, output_size, key=None, **kwargs):
-        if key is None:
-            key = jax.random.PRNGKey(0)
-        super().__init__()
-        self.hidden_size = hidden_size
-        key, subkey = jax.random.split(key)
-        self.rnn = ElmanRNNCell(input_size, hidden_size, key=subkey)
-        key, subkey = jax.random.split(key)
-        self.fc = eqx.nn.Linear(hidden_size, output_size, use_bias=True, key=subkey)
-
-    def __call__(self, x, hidden=None):
-        if hidden is None:
-            hidden = jnp.zeros(1, x.shape[0], self.hidden_size, device=x.device)
-        output, hidden = jax.lax.scan(lambda carry, x_t: (self.rnn(x_t, carry), self.rnn(x_t, carry)), hidden, x)
-        output = jax.vmap(self.fc)(output[:, -1, :])
-        return (output, hidden)
-
-    def init_hidden(self, batch_size):
-        return torch.zeros(1, batch_size, self.hidden_size)

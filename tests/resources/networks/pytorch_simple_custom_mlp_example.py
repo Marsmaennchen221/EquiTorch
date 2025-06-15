@@ -4,14 +4,11 @@ import torch.nn.functional as F
 
 
 class CustomLinear(nn.Module):
-    """A custom linear layer implementation to test recursive transpilation."""
-    
     def __init__(self, in_features, out_features, bias=True):
         super().__init__()
         self.in_features = in_features
         self.out_features = out_features
-        
-        # Use nn.Parameter for learnable parameters
+
         self.weight = nn.Parameter(torch.randn(out_features, in_features))
         if bias:
             self.bias = nn.Parameter(torch.randn(out_features))
