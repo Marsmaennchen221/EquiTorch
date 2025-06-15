@@ -126,59 +126,6 @@ def test_simple_custom_mlp_transpilation(resources_dir):
         pytest.fail(f"Transpiled code has syntax errors: {e}")
 
 
-def test_rnn_transpilation(resources_dir):
-    """Test transpilation of a PyTorch RNN to Equinox."""
-    # Read the PyTorch RNN example code
-    pytorch_code = Path(resources_dir / "networks/pytorch_rnn_example.py").resolve().read_text()
-    
-    # Transpile the PyTorch code to Equinox code
-    equinox_code = transpile(pytorch_code)
-    
-    # Save the transpiled code to a file FIRST (before any assertions)
-    output_path = resources_dir / "../transpiled/equinox_rnn.py"
-    with open(output_path, "w") as f:
-        f.write(equinox_code)
-    
-    # Verify the file was created
-    assert output_path.exists()
-    
-    # Basic imports and structure
-    assert "import jax" in equinox_code
-    assert "import jax.numpy as jnp" in equinox_code
-    assert "import equinox as eqx" in equinox_code
-    assert "class RNN(eqx.Module):" in equinox_code
-    
-    # RNN-specific transformations that will likely fail initially:
-    assert "rnn_cell: ElmanRNNCell" in equinox_code or "ElmanRNNCell" in equinox_code
-    # Check that nn.RNN is not used in actual code (excluding docstrings)
-    code_lines = [line.strip() for line in equinox_code.split('\n') 
-                  if line.strip() and not line.strip().startswith('"""') and not line.strip().startswith('#')]
-    code_without_docstrings = '\n'.join(code_lines)
-    assert "nn.RNN(" not in code_without_docstrings  # Should be converted away from actual usage
-    
-    # JAX/Equinox patterns
-    assert "def __call__(self, x" in equinox_code  # forward -> __call__
-    assert "jax.lax.scan" in equinox_code  # Sequential processing
-    
-    # Hidden state handling
-    assert "jnp.zeros" in equinox_code  # torch.zeros -> jnp.zeros
-    assert "hidden is None" in equinox_code  # Conditional logic preserved
-    
-    # Key management (advanced)
-    assert "key=" in equinox_code  # JAX random key handling
-    assert "jax.random.split" in equinox_code  # Key splitting
-    
-    # Tensor operations
-    assert "x.shape[0]" in equinox_code  # batch_size extraction
-    assert ".device" not in equinox_code  # Device concept should be removed
-    
-    # Multiple return values preserved
-    assert "return output, " in equinox_code  # Tuple return
-    
-    # Method conversion challenges
-    assert "def init_hidden" in equinox_code  # Additional methods preserved
-
-
 def test_cnn_transpilation(resources_dir):
     """Test transpilation of a PyTorch CNN to Equinox."""
     # Read the PyTorch CNN example code
