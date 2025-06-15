@@ -6,23 +6,31 @@ PyTorch functional method calls (F.relu(), torch.flatten(), etc.) to their JAX/N
 
 import ast
 
-# Mapping from PyTorch functional calls to JAX equivalents
+# Simple 1:1 functional mappings that only need function name changes
 # Format: (module, function) -> (target_module, target_function)
 FUNCTIONAL_MAPPINGS: dict[tuple[str, str], tuple[str, str]] = {
     ("F", "relu"): ("jax.nn", "relu"),
     ("F", "dropout"): ("jax.nn", "dropout"),
-    ("F", "max_pool1d"): ("jax.nn", "max_pool"),
-    ("F", "max_pool2d"): ("jax.nn", "max_pool"),
-    ("F", "max_pool3d"): ("jax.nn", "max_pool"),
     ("F", "softmax"): ("jax.nn", "softmax"),
-    ("torch", "flatten"): ("jnp", "reshape"),
-    ("torch", "zeros"): ("jnp", "zeros"),
     ("torch", "relu"): ("jax.nn", "relu"),
-    ("torch", "max_pool2d"): ("jax.nn", "max_pool"),
     ("torch", "tanh"): ("jnp", "tanh"),
     ("torch", "matmul"): ("jnp", "matmul"),
     ("torch", "sum"): ("jnp", "sum"),
     ("torch", "randn"): ("jax.random", "normal"),
+}
+
+# Complex transformations requiring custom logic
+# Format: (module, function) -> transformer_function
+CUSTOM_FUNCTIONAL_TRANSFORMERS: dict[tuple[str, str], callable] = {
+    ("F", "linear"): lambda node: transform_linear(node),
+    ("F", "layer_norm"): lambda node: transform_layer_norm(node),
+    ("F", "group_norm"): lambda node: transform_group_norm(node),
+    ("F", "adaptive_avg_pool2d"): lambda node: transform_adaptive_avg_pool2d(node),
+    ("F", "max_pool1d"): lambda node: transform_max_pool(node, "jax.nn", "max_pool", "max_pool1d"),
+    ("F", "max_pool2d"): lambda node: transform_max_pool(node, "jax.nn", "max_pool", "max_pool2d"),
+    ("F", "max_pool3d"): lambda node: transform_max_pool(node, "jax.nn", "max_pool", "max_pool3d"),
+    ("torch", "flatten"): lambda node: transform_torch_flatten(node),
+    ("torch", "zeros"): lambda node: transform_torch_zeros(node),
 }
 
 
@@ -39,20 +47,18 @@ def transform_functional_call(node: ast.Call, module_name: str, func_name: str) 
     """
     mapping_key = (module_name, func_name)
     
-    if mapping_key not in FUNCTIONAL_MAPPINGS:
-        return node  # Return unchanged if no mapping exists
+    # Check for custom transformers first
+    if mapping_key in CUSTOM_FUNCTIONAL_TRANSFORMERS:
+        transformer = CUSTOM_FUNCTIONAL_TRANSFORMERS[mapping_key]
+        return transformer(node)
     
-    new_module, new_func = FUNCTIONAL_MAPPINGS[mapping_key]
+    # Check for simple mappings
+    if mapping_key in FUNCTIONAL_MAPPINGS:
+        new_module, new_func = FUNCTIONAL_MAPPINGS[mapping_key]
+        return transform_simple_functional(node, new_module, new_func)
     
-    # Handle special cases that need custom transformation logic
-    if func_name.startswith("max_pool"):
-        return transform_max_pool(node, new_module, new_func, func_name)
-    if func_name == "flatten" and module_name == "torch":
-        return transform_torch_flatten(node)
-    if func_name == "zeros" and module_name == "torch":
-        return transform_torch_zeros(node)
-    # Simple mapping - just change the function reference
-    return transform_simple_functional(node, new_module, new_func)
+    # No mapping found - return unchanged
+    return node
 
 
 def transform_simple_functional(node: ast.Call, new_module: str, new_func: str) -> ast.Call:
@@ -188,6 +194,119 @@ def transform_torch_zeros(node: ast.Call) -> ast.Call:
     )
 
 
+# def transform_linear(node: ast.Call) -> ast.Call:
+#     """Transform F.linear(input, weight, bias) to JAX equivalent.
+    
+#     PyTorch: F.linear(input, weight, bias) 
+#     JAX: jnp.dot(input, weight.T) + bias (if bias is not None)
+    
+#     Args:
+#         node: The AST Call node for F.linear
+        
+#     Returns:
+#         Transformed AST Call node
+#     """
+#     if len(node.args) < 2:
+#         return node  # Invalid call, return unchanged
+    
+#     input_tensor = node.args[0]
+#     weight = node.args[1]
+#     bias = node.args[2] if len(node.args) > 2 else None
+    
+#     # Create weight.T (transpose)
+#     weight_transposed = ast.Attribute(
+#         value=weight,
+#         attr="T",
+#         ctx=ast.Load(),
+#     )
+    
+#     # Create jnp.dot(input, weight.T)
+#     dot_result = ast.Call(
+#         func=ast.Attribute(
+#             value=ast.Name(id="jnp", ctx=ast.Load()),
+#             attr="dot",
+#             ctx=ast.Load(),
+#         ),
+#         args=[input_tensor, weight_transposed],
+#         keywords=[],
+#     )
+    
+#     if bias is not None:
+#         # Add bias: jnp.dot(input, weight.T) + bias
+#         return ast.BinOp(
+#             left=dot_result,
+#             op=ast.Add(),
+#             right=bias,
+#         )
+#     else:
+#         return dot_result
+    
+def transform_linear(node: ast.Call) -> ast.Call:
+    """Transform F.linear(input, weight, bias) to JAX equivalent.
+    
+    PyTorch: F.linear(input, weight, bias) 
+    JAX: jnp.dot(input, weight.T) + bias (if bias is not None)
+    
+    Args:
+        node: The AST Call node for F.linear
+        
+    Returns:
+        Transformed AST Call node
+    """
+    if len(node.args) < 2:
+        return node  # Invalid call, return unchanged
+    
+    try:
+        # Extract arguments
+        input_tensor = node.args[0]
+        weight = node.args[1]
+        bias = node.args[2] if len(node.args) > 2 else None
+        
+        # Convert AST nodes to code strings
+        input_str = ast.unparse(input_tensor)
+        weight_str = ast.unparse(weight)
+        
+        # Build target code string
+        if bias is not None:
+            bias_str = ast.unparse(bias)
+            target_code = f"jnp.dot({input_str}, {weight_str}.T) + {bias_str}"
+        else:
+            target_code = f"jnp.dot({input_str}, {weight_str}.T)"
+        
+        # Parse back to AST and return the expression
+        parsed = ast.parse(target_code, mode='eval')
+        return parsed.body
+        
+    except Exception:
+        # Fallback to original node if anything goes wrong
+        return node
+
+
+
+def transform_layer_norm(node: ast.Call) -> ast.Call:
+    """Transform F.layer_norm to JAX equivalent.
+    
+    TODO: Implement layer normalization transformation.
+    """
+    return node
+
+
+def transform_group_norm(node: ast.Call) -> ast.Call:
+    """Transform F.group_norm to JAX equivalent.
+    
+    TODO: Implement group normalization transformation.
+    """
+    return node
+
+
+def transform_adaptive_avg_pool2d(node: ast.Call) -> ast.Call:
+    """Transform F.adaptive_avg_pool2d to JAX equivalent.
+    
+    TODO: Implement adaptive average pooling transformation.
+    """
+    return node
+
+
 def is_supported_functional(module_name: str, func_name: str) -> bool:
     """Check if a PyTorch functional call is supported for conversion.
     
@@ -198,7 +317,8 @@ def is_supported_functional(module_name: str, func_name: str) -> bool:
     Returns:
         True if the functional call can be converted, False otherwise
     """
-    return (module_name, func_name) in FUNCTIONAL_MAPPINGS
+    mapping_key = (module_name, func_name)
+    return mapping_key in FUNCTIONAL_MAPPINGS or mapping_key in CUSTOM_FUNCTIONAL_TRANSFORMERS
 
 
 def get_functional_mapping(module_name: str, func_name: str) -> tuple[str, str] | None:
@@ -220,4 +340,4 @@ def get_supported_functionals() -> list[tuple[str, str]]:
     Returns:
         List of (module_name, func_name) tuples
     """
-    return list(FUNCTIONAL_MAPPINGS.keys())
+    return list(FUNCTIONAL_MAPPINGS.keys()) + list(CUSTOM_FUNCTIONAL_TRANSFORMERS.keys())
