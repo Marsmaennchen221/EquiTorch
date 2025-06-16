@@ -52,6 +52,20 @@ class TestPyTorchToEquinoxTransformer:
         assert transformer.current_imports[expected_import_name] == expected_import_value
         assert len(transformer.current_imports.keys()) == 1
 
+    @pytest.mark.parametrize(
+        ("code", "expected_import_name", "expected_import_value"),
+        [
+            ("import torch", "torch", "torch"),
+            ("import torch as T", "T", "torch"),
+            ("import torch.nn", "nn", "torch.nn"),
+            ("import torch.nn as T", "T", "torch.nn"),
+        ]
+    )
+    def test_visit_Import(self, code: str, expected_import_name: str, expected_import_value: str) -> None:  # noqa: N802
+        transformer = PyTorchToEquinoxTransformer()
+        transformer.visit(ast.parse(code))
+        assert transformer.current_imports[expected_import_name] == expected_import_value
+        assert len(transformer.current_imports.keys()) == 1
 
     def test_visit_Module(self) -> None:  # noqa: N802
         pytorch_code = "nn.Module"
@@ -62,6 +76,52 @@ class TestPyTorchToEquinoxTransformer:
         assert compare_ast(tree.body[1], ast.Import(names=[ast.alias(name="jax.numpy", asname="jnp")]))
         assert compare_ast(tree.body[2], ast.Import(names=[ast.alias(name="equinox", asname="eqx")]))
 
+    @pytest.mark.parametrize(
+        ("code", "pytorch_module"),
+        [
+            ("class EmptyClass:pass", False),
+            ("class EmptyClass():pass", False),
+            ("import torch\nclass PyTorchClass(torch.nn.Module):pass", True),
+            ("import torch as T\nclass PyTorchClass(T.nn.Module):pass", True),
+            ("import wrong as torch\nclass PyTorchClass(torch.nn.Module):pass", False),
+            ("from torch import nn\nclass PyTorchClass(nn.Module):pass", True),
+            ("import torch.nn\nclass PyTorchClass(nn.Module):pass", True),
+            ("from torch import nn as equinox\nclass PyTorchClass(equinox.Module):pass", True),
+            ("from torch.nn import Module\nclass PyTorchClass(Module):pass", True),
+            ("from torch.nn import Module as mod\nclass PyTorchClass(mod):pass", True),
+            ("import equinox\nclass EquinoxClass(equinox.Module):pass", False),
+            ("import equinox as nn\nclass EquinoxClass(nn.Module):pass", False),
+            ("from equinox import Module\nclass EquinoxClass(Module):pass", False),
+            ("from equinox import Module as mod\nclass EquinoxClass(mod):pass", False),
+            ("from abc import ABCMeta\nfrom torch.nn import Module\nclass PyTorchClass(ABCMeta, Module):pass", True),
+            ("from abc import ABCMeta\nfrom torch.nn import Module\nclass PyTorchClass(Module, ABCMeta):pass", True),
+        ],
+        ids=[
+            "EmptyClass",
+            "EmptyClass()",
+            "torch import",
+            "torch import Alias",
+            "torch import wrong Alias",
+            "nn import",
+            "torch.nn import",
+            "nn import Alias",
+            "torch Module import",
+            "torch Module import Alias",
+            "equinox import",
+            "equinox as nn",
+            "equinox Module import",
+            "equinox Alias",
+            "ABCMeta plus torch Module",
+            "torch Module plus ABCMeta",
+        ]
+    )
+    def test_is_pytorch_module(self, code: str, pytorch_module: bool) -> None:
+        tree = ast.parse(code)
+        transformer = PyTorchToEquinoxTransformer()
+        transformer.visit(ast.parse(code))
+        for node in tree.body:
+            if isinstance(node, ast.ClassDef):
+                assert transformer._is_pytorch_module(node) == pytorch_module
 
     def test_find_init_method(self) -> None:
         assert PyTorchToEquinoxTransformer._find_init_method(ast.parse("")) is None
