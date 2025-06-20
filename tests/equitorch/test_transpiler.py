@@ -133,8 +133,8 @@ class TestPyTorchToEquinoxTransformer:
         assert init_method.name == "__init__"
 
 
-# TODO: remove test once fine-graded tests are implemented
-def test_mlp_transpilation() -> None:
+
+def test_mlp_transpilation(resources_dir, snapshot_equinox_code: SnapshotAssertion):
     """Test transpilation of a PyTorch MLP to Equinox."""
     # Read the PyTorch MLP example code
     pytorch_code = read_python_code("networks/pytorch_mlp_example.py")
@@ -154,9 +154,9 @@ def test_mlp_transpilation() -> None:
     assert "jax.vmap(self.fc1)" in equinox_code
     assert "jax.vmap(self.fc2)" in equinox_code
 
+    assert equinox_code == snapshot_equinox_code
 
-# TODO: remove test once fine-graded tests are implemented
-def test_cnn_transpilation() -> None:
+def test_cnn_transpilation(resources_dir, snapshot_equinox_code: SnapshotAssertion):
     """Test transpilation of a PyTorch CNN to Equinox."""
     # Read the PyTorch CNN example code
     pytorch_cnn_code = read_python_code("networks/pytorch_cnn_example.py")
@@ -176,3 +176,5 @@ def test_cnn_transpilation() -> None:
     assert "jax.nn.relu" in equinox_cnn_code
     assert "jax.nn.max_pool" in equinox_cnn_code
     assert "jnp.reshape" in equinox_cnn_code
+
+    assert equinox_cnn_code == snapshot_equinox_code
