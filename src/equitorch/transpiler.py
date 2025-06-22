@@ -27,7 +27,6 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
 
     def __init__(self):
         """Initialize the transpiler."""
-        self.current_class_params = []  # Track parameters for current class
         self.key_counter = 0
         self.current_imports = {}
 
@@ -77,14 +76,14 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
         if not self._is_pytorch_module(node):
             return node
 
-        # Reset state for this class
-        self.current_class_params = []
+        # Track parameters for current class
+        current_class_params = []
         self.key_counter = 0
 
         # Extract parameters from __init__ method
         init_method = self._find_init_method(node)
         if init_method:
-            self._extract_parameters(init_method)
+            current_class_params = self._extract_parameters(init_method)
 
         # Transform the class
         new_node: ast.ClassDef = self.generic_visit(node)  # type: ignore[assignment]
@@ -97,7 +96,7 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
         )]
 
         # Add type annotations for parameters
-        self._add_type_annotations(new_node)
+        self._add_type_annotations(new_node, current_class_params)
 
         return new_node
 
@@ -148,11 +147,11 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
                 return item
         return None
 
-    def _extract_parameters(self, init_method: ast.FunctionDef) -> None:
+    def _extract_parameters(self, init_method: ast.FunctionDef) -> list[dict[str, str | ast.Call]]:
         """Extract module parameters from __init__ method."""
         class ParameterExtractor(ast.NodeVisitor):
-            def __init__(self, parent):
-                self.parent = parent
+            def __init__(self):
+                self.current_class_params: list[dict[str, str | ast.Call]] = []
 
             def visit_Assign(self, node: ast.Assign):  # noqa: N802
                 if (len(node.targets) == 1 and
@@ -162,21 +161,23 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
                     isinstance(node.value, ast.Call)):
 
                     param_name = node.targets[0].attr
-                    if self.parent._is_pytorch_module_init(node.value):
+                    if PyTorchToEquinoxTransformer._is_pytorch_module_init(node.value):
                         module_type = node.value.func.attr
-                        self.parent.current_class_params.append({
+                        self.current_class_params.append({
                             "name": param_name,
                             "type": module_type,
                             "call_node": node.value,
                         })
 
-        extractor = ParameterExtractor(self)
+        extractor = ParameterExtractor()
         extractor.visit(init_method)
+        return extractor.current_class_params
 
-    def _add_type_annotations(self, class_node: ast.ClassDef):
+    @staticmethod
+    def _add_type_annotations(class_node: ast.ClassDef, current_class_params: list[dict[str, str | ast.Call]]):
         """Add type annotations for parameters."""
         annotations = []
-        for param in self.current_class_params:
+        for param in current_class_params:
             annotation = ast.AnnAssign(
                 target=ast.Name(id=param["name"], ctx=ast.Store()),
                 annotation=ast.Attribute(

@@ -173,13 +173,15 @@ class TestPyTorchToEquinoxTransformer:
         tree = ast.parse(code)
         func_def: ast.FunctionDef = tree.body[0]  # type: ignore[assignment]
         transformer = PyTorchToEquinoxTransformer()
-        transformer._extract_parameters(func_def)
-        assert len(transformer.current_class_params) == len(names)
+        current_class_params = transformer._extract_parameters(func_def)
+        assert len(current_class_params) == len(names)
         for i, name in enumerate(names):
-            assert transformer.current_class_params[i]["name"] == name
-            assert isinstance(transformer.current_class_params[i]["call_node"], ast.Call)
-            assert isinstance(transformer.current_class_params[i]["call_node"].func, ast.Attribute)
-            assert transformer.current_class_params[i]["call_node"].func.attr == transformer.current_class_params[i]["type"]
+            assert isinstance(current_class_params[i]["name"], str)
+            assert current_class_params[i]["name"] == name
+            assert isinstance(current_class_params[i]["type"], str)
+            assert isinstance(current_class_params[i]["call_node"], ast.Call)
+            assert isinstance(current_class_params[i]["call_node"].func, ast.Attribute)
+            assert current_class_params[i]["call_node"].func.attr == current_class_params[i]["type"]
 
 
 def test_mlp_transpilation(snapshot_equinox_code: SnapshotAssertion):
