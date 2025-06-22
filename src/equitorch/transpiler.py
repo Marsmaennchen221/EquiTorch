@@ -77,7 +77,7 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
             return node
 
         # Track parameters for current class
-        current_class_params = []
+        current_class_params: dict
         self.key_counter = 0
 
         # Extract parameters from __init__ method
@@ -147,11 +147,11 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
                 return item
         return None
 
-    def _extract_parameters(self, init_method: ast.FunctionDef) -> list[dict[str, str | ast.Call]]:
+    def _extract_parameters(self, init_method: ast.FunctionDef) -> dict[str, dict[str, str | ast.Call]]:
         """Extract module parameters from __init__ method."""
         class ParameterExtractor(ast.NodeVisitor):
             def __init__(self):
-                self.current_class_params: list[dict[str, str | ast.Call]] = []
+                self.current_class_params: dict[str, dict[str, str | ast.Call]] = {}
 
             def visit_Assign(self, node: ast.Assign):  # noqa: N802
                 if (len(node.targets) == 1 and
@@ -163,30 +163,29 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
                     param_name = node.targets[0].attr
                     if PyTorchToEquinoxTransformer._is_pytorch_module_init(node.value):
                         module_type = node.value.func.attr
-                        self.current_class_params.append({
-                            "name": param_name,
+                        self.current_class_params[param_name] = ({
                             "type": module_type,
                             "call_node": node.value,
-                        })
+                        })  # Override same name with latest assignment
 
         extractor = ParameterExtractor()
         extractor.visit(init_method)
         return extractor.current_class_params
 
     @staticmethod
-    def _add_type_annotations(class_node: ast.ClassDef, current_class_params: list[dict[str, str | ast.Call]]):
+    def _add_type_annotations(class_node: ast.ClassDef, current_class_params: dict[str, dict[str, str | ast.Call]]):
         """Add type annotations for parameters."""
         annotations = []
-        for param in current_class_params:
+        for name, param_body in current_class_params.items():
             annotation = ast.AnnAssign(
-                target=ast.Name(id=param["name"], ctx=ast.Store()),
+                target=ast.Name(id=name, ctx=ast.Store()),
                 annotation=ast.Attribute(
                     value=ast.Attribute(
                         value=ast.Name(id="eqx", ctx=ast.Load()),
                         attr="nn",
                         ctx=ast.Load(),
                     ),
-                    attr=param["type"],
+                    attr=param_body["type"],
                     ctx=ast.Load(),
                 ),
                 value=None,

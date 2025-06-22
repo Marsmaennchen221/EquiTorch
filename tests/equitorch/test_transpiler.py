@@ -165,7 +165,7 @@ class TestPyTorchToEquinoxTransformer:
             ("def __init__(self, in_channels, num_classes):\n\tsuper(SimpleCNN, self).__init__()\n\tself.number = 40 + 2", []),
             ("def __init__(self, in_channels, num_classes):\n\tsuper(SimpleCNN, self).__init__()\n\tself.conv1 = nn.Conv2d(in_channels=in_channels, out_channels=16, kernel_size=3, stride=1, padding=1)\n\tself.conv2 = nn.Conv2d(in_channels=16, out_channels=32, kernel_size=3, stride=1, padding=1)\n\tself.fc = nn.Linear(32 * 7 * 7, num_classes)\n\tself.constant = 42", ["conv1", "conv2", "fc"]),
             ("def __init__(self, in_channels, num_classes):\n\tsuper(SimpleCNN, self).__init__()\n\tself.conv1 = nn.Conv2d(in_channels=in_channels, out_channels=16, kernel_size=3, stride=1, padding=1)\n\ta = 2 + 40\n\tself.conv2 = nn.Conv2d(in_channels=16, out_channels=32, kernel_size=3, stride=1, padding=1)\n\tself.fc = nn.Linear(32 * 7 * 7, num_classes)", ["conv1", "conv2", "fc"]),
-            ("def __init__(self, in_channels, num_classes):\n\tsuper(SimpleCNN, self).__init__()\n\tself.conv1 = nn.Conv2d(in_channels=in_channels, out_channels=16, kernel_size=3, stride=1, padding=1)\n\tself.conv1 = nn.Conv2d(in_channels=16, out_channels=32, kernel_size=3, stride=1, padding=1)", ["conv1", "conv1"]),  # TODO: is this behaviour expected???
+            ("def __init__(self, in_channels, num_classes):\n\tsuper(SimpleCNN, self).__init__()\n\tself.conv1 = nn.Conv2d(in_channels=in_channels, out_channels=16, kernel_size=3, stride=1, padding=1)\n\tself.conv1 = nn.Conv3d(in_channels=16, out_channels=32, kernel_size=3, stride=1, padding=1)", ["conv1"]),
         ],
         ids=["3 torch Assignments", "no Assignments", "no torch Assignments", "torch Assignments and non torch Assignments", "torch Assignments and non torch Assignments not to self", "multiple torch Assignments same name"],
     )
@@ -175,14 +175,45 @@ class TestPyTorchToEquinoxTransformer:
         transformer = PyTorchToEquinoxTransformer()
         current_class_params = transformer._extract_parameters(func_def)
         assert len(current_class_params) == len(names)
-        for i, name in enumerate(names):
-            assert isinstance(current_class_params[i]["name"], str)
-            assert current_class_params[i]["name"] == name
-            assert isinstance(current_class_params[i]["type"], str)
-            assert isinstance(current_class_params[i]["call_node"], ast.Call)
-            assert isinstance(current_class_params[i]["call_node"].func, ast.Attribute)
-            assert current_class_params[i]["call_node"].func.attr == current_class_params[i]["type"]
+        for name, param_body in current_class_params.items():
+            assert name in names
+            assert isinstance(param_body["type"], str)
+            assert isinstance(param_body["call_node"], ast.Call)
+            assert isinstance(param_body["call_node"].func, ast.Attribute)
+            assert param_body["call_node"].func.attr == param_body["type"]
 
+    @pytest.mark.parametrize(
+        "code",
+        [
+            "class TestClass:\n\tdef __init__(self, in_channels, num_classes):\n\t\tsuper(SimpleCNN, self).__init__()\n\t\tself.conv1 = nn.Conv2d(in_channels=in_channels, out_channels=16, kernel_size=3, stride=1, padding=1)\n\t\tself.conv2 = nn.Conv2d(in_channels=16, out_channels=32, kernel_size=3, stride=1, padding=1)\n\t\tself.fc = nn.Linear(32 * 7 * 7, num_classes)",
+            "class TestClass:\n\tdef __init__(self, in_channels, num_classes):\n\t\tsuper(SimpleCNN, self).__init__()",
+            "class TestClass:\n\tdef __init__(self, in_channels, num_classes):\n\t\tsuper(SimpleCNN, self).__init__()\n\t\tself.number = 40 + 2",
+            "class TestClass:\n\tdef __init__(self, in_channels, num_classes):\n\t\tsuper(SimpleCNN, self).__init__()\n\t\tself.conv1 = nn.Conv2d(in_channels=in_channels, out_channels=16, kernel_size=3, stride=1, padding=1)\n\t\tself.conv2 = nn.Conv2d(in_channels=16, out_channels=32, kernel_size=3, stride=1, padding=1)\n\t\tself.fc = nn.Linear(32 * 7 * 7, num_classes)\n\t\tself.constant = 42",
+            "class TestClass:\n\tdef __init__(self, in_channels, num_classes):\n\t\tsuper(SimpleCNN, self).__init__()\n\t\tself.conv1 = nn.Conv2d(in_channels=in_channels, out_channels=16, kernel_size=3, stride=1, padding=1)\n\t\ta = 2 + 40\n\t\tself.conv2 = nn.Conv2d(in_channels=16, out_channels=32, kernel_size=3, stride=1, padding=1)\n\t\tself.fc = nn.Linear(32 * 7 * 7, num_classes)",
+            "class TestClass:\n\tdef __init__(self, in_channels, num_classes):\n\t\tsuper(SimpleCNN, self).__init__()\n\t\tself.conv1 = nn.Conv2d(in_channels=in_channels, out_channels=16, kernel_size=3, stride=1, padding=1)\n\t\tself.conv1 = nn.Conv3d(in_channels=16, out_channels=32, kernel_size=3, stride=1, padding=1)",
+        ],
+        ids=["3 torch Assignments", "no Assignments", "no torch Assignments", "torch Assignments and non torch Assignments", "torch Assignments and non torch Assignments not to self", "multiple torch Assignments same name"],
+    )
+    def test_add_type_annotations(self, code: str) -> None:
+        tree = ast.parse(code)
+        class_def: ast.ClassDef = tree.body[0]  # type: ignore[assignment]
+        func_def: ast.FunctionDef = class_def.body[0]  # type: ignore[assignment]
+        transformer = PyTorchToEquinoxTransformer()
+        current_class_params = transformer._extract_parameters(func_def)
+        PyTorchToEquinoxTransformer._add_type_annotations(class_def, current_class_params)
+        num_annotations = 0
+        for annotation in class_def.body:
+            if isinstance(annotation, ast.AnnAssign):
+                assert annotation.target.id in current_class_params
+                annotation_info: dict[str, str | ast.Call] = current_class_params[annotation.target.id]
+                num_annotations += 1
+                assert isinstance(annotation.annotation, ast.Attribute)
+                assert annotation.annotation.attr == annotation_info["type"]
+                assert isinstance(annotation.annotation.value, ast.Attribute)
+                assert annotation.annotation.value.attr == "nn"
+                assert isinstance(annotation.annotation.value.value, ast.Name)
+                assert annotation.annotation.value.value.id == "eqx"
+        assert num_annotations == len(current_class_params)
 
 def test_mlp_transpilation(snapshot_equinox_code: SnapshotAssertion):
     """Test transpilation of a PyTorch MLP to Equinox."""
