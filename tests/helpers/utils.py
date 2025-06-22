@@ -7,8 +7,7 @@ from tests.helpers.resources import resolve_resource_path
 
 
 def read_python_code(resource_path: str | Path) -> str:
-    """
-    Read the python code from a given resource_path.
+    """Read the python code from a given resource_path.
 
     Args:
         resource_path: Relative resource path to python code in test/resources folder
@@ -27,8 +26,7 @@ def read_python_code(resource_path: str | Path) -> str:
 
 
 def compare_ast(tree1: ast.AST, tree2: ast.AST) -> bool:
-    """
-    Compare two ast trees.
+    """Compare two ast trees.
 
     Args:
         tree1: The first ast tree
@@ -42,8 +40,7 @@ def compare_ast(tree1: ast.AST, tree2: ast.AST) -> bool:
 
 
 def _compare_ast_recursive(tree1: Any, tree2: Any) -> bool:
-    """
-    Compare two ast trees.
+    """Compare two ast trees.
 
     Args:
         tree1: The first ast tree
@@ -61,7 +58,6 @@ def _compare_ast_recursive(tree1: Any, tree2: Any) -> bool:
             if not _compare_ast_recursive(v, getattr(tree2, k)):
                 return False
         return True
-    elif isinstance(tree1, list):
-        return all(itertools.starmap(_compare_ast_recursive, zip(tree1, tree2)))
-    else:
-        return tree1 == tree2
+    if isinstance(tree1, list):
+        return all(itertools.starmap(_compare_ast_recursive, zip(tree1, tree2, strict=False)))
+    return tree1 == tree2

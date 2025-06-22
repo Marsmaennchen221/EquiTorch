@@ -4,8 +4,8 @@ from pathlib import Path
 import pytest
 from syrupy import SnapshotAssertion
 
-from equitorch.transpiler import transpile, PyTorchToEquinoxTransformer
-from tests.helpers.utils import read_python_code, compare_ast
+from equitorch.transpiler import PyTorchToEquinoxTransformer, transpile
+from tests.helpers.utils import compare_ast, read_python_code
 
 
 def transform_to_equinox_ast(pytorch_code: str) -> ast.AST:
@@ -20,11 +20,10 @@ def transform_to_equinox_ast(pytorch_code: str) -> ast.AST:
         "networks/pytorch_mlp_example.py",
         "networks/pytorch_cnn_example.py",
     ],
-    ids=["mlp", "cnn"]
+    ids=["mlp", "cnn"],
 )
 def test_nn_transpilation(resource_path: str | Path, snapshot_equinox_code: SnapshotAssertion) -> None:
     """Test transpilation of PyTorch neural networks to Equinox."""
-
     # Read PyTorch code
     pytorch_code = read_python_code(resource_path)
 
@@ -44,7 +43,7 @@ class TestPyTorchToEquinoxTransformer:
             ("from torch import nn as T", "T", "torch.nn"),
             ("from torch.nn import Module", "Module", "torch.nn.Module"),
             ("from torch.nn import Module as M", "M", "torch.nn.Module"),
-        ]
+        ],
     )
     def test_visit_ImportFrom(self, code: str, expected_import_name: str, expected_import_value: str) -> None:  # noqa: N802
         transformer = PyTorchToEquinoxTransformer()
@@ -59,7 +58,7 @@ class TestPyTorchToEquinoxTransformer:
             ("import torch as T", "T", "torch"),
             ("import torch.nn", "nn", "torch.nn"),
             ("import torch.nn as T", "T", "torch.nn"),
-        ]
+        ],
     )
     def test_visit_Import(self, code: str, expected_import_name: str, expected_import_value: str) -> None:  # noqa: N802
         transformer = PyTorchToEquinoxTransformer()
@@ -113,7 +112,7 @@ class TestPyTorchToEquinoxTransformer:
             "equinox Alias",
             "ABCMeta plus torch Module",
             "torch Module plus ABCMeta",
-        ]
+        ],
     )
     def test_is_pytorch_module(self, code: str, pytorch_module: bool) -> None:  # noqa: FBT001
         tree = ast.parse(code)
