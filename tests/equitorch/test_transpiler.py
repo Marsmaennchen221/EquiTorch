@@ -134,7 +134,7 @@ class TestPyTorchToEquinoxTransformer:
 
 
 
-def test_mlp_transpilation(resources_dir, snapshot_equinox_code: SnapshotAssertion):
+def test_mlp_transpilation(snapshot_equinox_code: SnapshotAssertion):
     """Test transpilation of a PyTorch MLP to Equinox."""
     # Read the PyTorch MLP example code
     pytorch_code = read_python_code("networks/pytorch_mlp_example.py")
@@ -156,7 +156,7 @@ def test_mlp_transpilation(resources_dir, snapshot_equinox_code: SnapshotAsserti
 
     assert equinox_code == snapshot_equinox_code
 
-def test_cnn_transpilation(resources_dir, snapshot_equinox_code: SnapshotAssertion):
+def test_cnn_transpilation(snapshot_equinox_code: SnapshotAssertion):
     """Test transpilation of a PyTorch CNN to Equinox."""
     # Read the PyTorch CNN example code
     pytorch_cnn_code = read_python_code("networks/pytorch_cnn_example.py")
