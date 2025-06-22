@@ -29,16 +29,16 @@ addopts = "--tb=short"
 pythonpath = "src"
 
 [tool.black]
-line-length = 120
 exclude = "code_test_.*\\.snapshot\\.py$"
+line-length = 120
 
 [tool.mypy]
 exclude = "code_test_.*\\.snapshot\\.py$"
 
 [tool.ruff]
+exclude = ["**/code_test_*.snapshot.py"]
 line-length = 120
 target-version = "py313"
-extend-exclude = ["code_test_*.snapshot.py"]
 
 [tool.ruff.lint]
 select = [
