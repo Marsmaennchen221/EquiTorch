@@ -52,7 +52,7 @@ def _compare_ast_recursive(tree1: Any, tree2: Any) -> bool:
     Returns:
         bool: True if trees are equal, False otherwise
     """
-    if type(tree1) != type(tree2):
+    if isinstance(tree1, type(tree2)):
         return False
     if isinstance(tree1, ast.AST):
         for k, v in vars(tree1).items():

@@ -71,7 +71,7 @@ class TestPyTorchToEquinoxTransformer:
         pytorch_code = "nn.Module"
         tree = transform_to_equinox_ast(pytorch_code)
         assert isinstance(tree, ast.Module)
-        assert len(tree.body) == 4
+        assert len(tree.body) == 4  # noqa: PLR2004
         assert compare_ast(tree.body[0], ast.Import(names=[ast.alias(name="jax", asname=None)]))
         assert compare_ast(tree.body[1], ast.Import(names=[ast.alias(name="jax.numpy", asname="jnp")]))
         assert compare_ast(tree.body[2], ast.Import(names=[ast.alias(name="equinox", asname="eqx")]))
@@ -115,7 +115,7 @@ class TestPyTorchToEquinoxTransformer:
             "torch Module plus ABCMeta",
         ]
     )
-    def test_is_pytorch_module(self, code: str, pytorch_module: bool) -> None:
+    def test_is_pytorch_module(self, code: str, pytorch_module: bool) -> None:  # noqa: FBT001
         tree = ast.parse(code)
         transformer = PyTorchToEquinoxTransformer()
         transformer.visit(ast.parse(code))
@@ -124,11 +124,11 @@ class TestPyTorchToEquinoxTransformer:
                 assert transformer._is_pytorch_module(node) == pytorch_module
 
     def test_find_init_method(self) -> None:
-        assert PyTorchToEquinoxTransformer._find_init_method(ast.parse("")) is None
-        assert PyTorchToEquinoxTransformer._find_init_method(ast.parse("class Test:pass").body[0]) is None
-        assert PyTorchToEquinoxTransformer._find_init_method(ast.parse("class Test():pass").body[0]) is None
-        assert PyTorchToEquinoxTransformer._find_init_method(ast.parse("class Test():\n\tdef test():pass").body[0]) is None
-        init_method = PyTorchToEquinoxTransformer._find_init_method(ast.parse("class Test():\n\tdef __init__():pass").body[0])
+        assert PyTorchToEquinoxTransformer._find_init_method(ast.parse("")) is None  # type: ignore[arg-type]
+        assert PyTorchToEquinoxTransformer._find_init_method(ast.parse("class Test:pass").body[0]) is None  # type: ignore[arg-type]
+        assert PyTorchToEquinoxTransformer._find_init_method(ast.parse("class Test():pass").body[0]) is None  # type: ignore[arg-type]
+        assert PyTorchToEquinoxTransformer._find_init_method(ast.parse("class Test():\n\tdef test():pass").body[0]) is None  # type: ignore[arg-type]
+        init_method = PyTorchToEquinoxTransformer._find_init_method(ast.parse("class Test():\n\tdef __init__():pass").body[0])  # type: ignore[arg-type]
         assert isinstance(init_method, ast.FunctionDef)
         assert init_method.name == "__init__"
 

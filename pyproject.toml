@@ -30,10 +30,15 @@ pythonpath = "src"
 
 [tool.black]
 line-length = 120
+exclude = "code_test_.*\\.snapshot\\.py$"
+
+[tool.mypy]
+exclude = "code_test_.*\\.snapshot\\.py$"
 
 [tool.ruff]
 line-length = 120
 target-version = "py313"
+extend-exclude = ["code_test_*.snapshot.py"]
 
 [tool.ruff.lint]
 select = [

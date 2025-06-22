@@ -31,18 +31,19 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
         self.key_counter = 0
         self.current_imports = {}
 
-    def visit_ImportFrom(self, node: ast.ImportFrom) -> ast.ImportFrom:
+    def visit_ImportFrom(self, node: ast.ImportFrom) -> ast.ImportFrom:  # noqa: N802
         """Save from Imports."""
+        node_module: str = node.module if node.module is not None else ""
         for alias in node.names:
             if alias.asname is not None:
-                self.current_imports[alias.asname] = node.module + "." + alias.name
+                self.current_imports[alias.asname] = node_module + "." + alias.name
             else:
-                self.current_imports[alias.name] = node.module + "." + alias.name
+                self.current_imports[alias.name] = node_module + "." + alias.name
 
         new_node: ast.ImportFrom = self.generic_visit(node)  # type: ignore[assignment]
         return new_node
 
-    def visit_Import(self, node: ast.Import) -> ast.Import:
+    def visit_Import(self, node: ast.Import) -> ast.Import:  # noqa: N802
         """Save regular Imports."""
         for alias in node.names:
             if alias.asname is not None:
