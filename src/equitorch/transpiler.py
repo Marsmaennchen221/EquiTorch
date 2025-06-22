@@ -148,13 +148,13 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
                 return item
         return None
 
-    def _extract_parameters(self, init_method: ast.FunctionDef):
+    def _extract_parameters(self, init_method: ast.FunctionDef) -> None:
         """Extract module parameters from __init__ method."""
         class ParameterExtractor(ast.NodeVisitor):
             def __init__(self, parent):
                 self.parent = parent
 
-            def visit_Assign(self, node):  # noqa: N802
+            def visit_Assign(self, node: ast.Assign):  # noqa: N802
                 if (len(node.targets) == 1 and
                     isinstance(node.targets[0], ast.Attribute) and
                     isinstance(node.targets[0].value, ast.Name) and

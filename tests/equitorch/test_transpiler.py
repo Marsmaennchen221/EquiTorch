@@ -1,5 +1,6 @@
 import ast
 from pathlib import Path
+from typing import List
 
 import pytest
 from syrupy import SnapshotAssertion
@@ -122,6 +123,31 @@ class TestPyTorchToEquinoxTransformer:
             if isinstance(node, ast.ClassDef):
                 assert transformer._is_pytorch_module(node) == pytorch_module
 
+    @pytest.mark.parametrize(
+        ("code", "pytorch_module_init"),
+        [
+            ("nn.Linear(32 * 7 * 7, 3)", True),
+            ("nn.Conv1d(in_channels=1, out_channels=16, kernel_size=3, stride=1, padding=1)", True),
+            ("nn.Conv2d(in_channels=1, out_channels=16, kernel_size=3, stride=1, padding=1)", True),
+            ("nn.Conv3d(in_channels=1, out_channels=16, kernel_size=3, stride=1, padding=1)", True),
+            ("nn.BatchNorm1d(num_features=100)", True),
+            ("nn.BatchNorm2d(num_features=100)", True),
+            ("nn.BatchNorm3d(num_features=100)", True),
+            ("nn.Dropout(p=0.2)", True),
+            ("nn.Sequential(nn.Conv2d(1,20,5))", False),
+            ("ast.Load()", False),
+        ],
+        ids=["Linear", "Conv1d", "Conv2d", "Conv3d", "BatchNorm1d", "BatchNorm2d", "BatchNorm3d", "Dropout", "not supported Sequential", "not a pytorch module"],
+    )
+    def test_is_pytorch_module_init(self, code: str, pytorch_module_init: bool) -> None:  # noqa: FBT001
+        tree = ast.parse(code)
+        print(ast.dump(tree, indent=4))
+        for node in tree.body:
+            if isinstance(node, ast.Expr) and isinstance(node.value, ast.Call):
+                assert PyTorchToEquinoxTransformer._is_pytorch_module_init(node.value) == pytorch_module_init
+            else:
+               assert False
+
     def test_find_init_method(self) -> None:
         assert PyTorchToEquinoxTransformer._find_init_method(ast.parse("")) is None  # type: ignore[arg-type]
         assert PyTorchToEquinoxTransformer._find_init_method(ast.parse("class Test:pass").body[0]) is None  # type: ignore[arg-type]
@@ -131,6 +157,29 @@ class TestPyTorchToEquinoxTransformer:
         assert isinstance(init_method, ast.FunctionDef)
         assert init_method.name == "__init__"
 
+    @pytest.mark.parametrize(
+        ("code", "names"),
+        [
+            ("def __init__(self, in_channels, num_classes):\n\tsuper(SimpleCNN, self).__init__()\n\tself.conv1 = nn.Conv2d(in_channels=in_channels, out_channels=16, kernel_size=3, stride=1, padding=1)\n\tself.conv2 = nn.Conv2d(in_channels=16, out_channels=32, kernel_size=3, stride=1, padding=1)\n\tself.fc = nn.Linear(32 * 7 * 7, num_classes)", ["conv1", "conv2", "fc"]),
+            ("def __init__(self, in_channels, num_classes):\n\tsuper(SimpleCNN, self).__init__()", []),
+            ("def __init__(self, in_channels, num_classes):\n\tsuper(SimpleCNN, self).__init__()\n\tself.number = 40 + 2", []),
+            ("def __init__(self, in_channels, num_classes):\n\tsuper(SimpleCNN, self).__init__()\n\tself.conv1 = nn.Conv2d(in_channels=in_channels, out_channels=16, kernel_size=3, stride=1, padding=1)\n\tself.conv2 = nn.Conv2d(in_channels=16, out_channels=32, kernel_size=3, stride=1, padding=1)\n\tself.fc = nn.Linear(32 * 7 * 7, num_classes)\n\tself.constant = 42", ["conv1", "conv2", "fc"]),
+            ("def __init__(self, in_channels, num_classes):\n\tsuper(SimpleCNN, self).__init__()\n\tself.conv1 = nn.Conv2d(in_channels=in_channels, out_channels=16, kernel_size=3, stride=1, padding=1)\n\ta = 2 + 40\n\tself.conv2 = nn.Conv2d(in_channels=16, out_channels=32, kernel_size=3, stride=1, padding=1)\n\tself.fc = nn.Linear(32 * 7 * 7, num_classes)", ["conv1", "conv2", "fc"]),
+            ("def __init__(self, in_channels, num_classes):\n\tsuper(SimpleCNN, self).__init__()\n\tself.conv1 = nn.Conv2d(in_channels=in_channels, out_channels=16, kernel_size=3, stride=1, padding=1)\n\tself.conv1 = nn.Conv2d(in_channels=16, out_channels=32, kernel_size=3, stride=1, padding=1)", ["conv1", "conv1"]),  # TODO: is this behaviour expected???
+        ],
+        ids=["3 torch Assignments", "no Assignments", "no torch Assignments", "torch Assignments and non torch Assignments", "torch Assignments and non torch Assignments not to self", "multiple torch Assignments same name"],
+    )
+    def test_extract_parameters(self, code: str, names: List[str]) -> None:
+        tree = ast.parse(code)
+        func_def: ast.FunctionDef = tree.body[0]  # type: ignore[assignment]
+        transformer = PyTorchToEquinoxTransformer()
+        transformer._extract_parameters(func_def)
+        assert len(transformer.current_class_params) == len(names)
+        for i, name in enumerate(names):
+            assert transformer.current_class_params[i]["name"] == name
+            assert isinstance(transformer.current_class_params[i]["call_node"], ast.Call)
+            assert isinstance(transformer.current_class_params[i]["call_node"].func, ast.Attribute)
+            assert transformer.current_class_params[i]["call_node"].func.attr == transformer.current_class_params[i]["type"]
 
 
 def test_mlp_transpilation(snapshot_equinox_code: SnapshotAssertion):
