@@ -29,14 +29,9 @@ addopts = "--tb=short"
 pythonpath = "src"
 
 [tool.black]
-exclude = ".*__snapshots__.*"
 line-length = 120
 
-[tool.mypy]
-exclude = ".*__snapshots__.*"
-
 [tool.ruff]
-extend-exclude = ["__snapshots__"]
 line-length = 120
 target-version = "py313"
 
