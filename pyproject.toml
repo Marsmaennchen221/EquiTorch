@@ -29,14 +29,14 @@ addopts = "--tb=short"
 pythonpath = "src"
 
 [tool.black]
-exclude = "code_test_.*\\.snapshot\\.py$"
+exclude = ".*__snapshots__.*"
 line-length = 120
 
 [tool.mypy]
-exclude = "code_test_.*\\.snapshot\\.py$"
+exclude = ".*__snapshots__.*"
 
 [tool.ruff]
-exclude = ["**/code_test_*.snapshot.py"]
+exclude = ["**/__snapshots__/**"]
 line-length = 120
 target-version = "py313"
 
