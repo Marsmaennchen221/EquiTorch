@@ -5,6 +5,7 @@ from unittest.mock import patch
 
 import pytest
 from syrupy import SnapshotAssertion
+from typing_extensions import Literal
 
 from equitorch.transpiler import PyTorchToEquinoxTransformer, transpile
 from tests.helpers.utils import compare_ast, read_python_code
@@ -139,6 +140,30 @@ class TestPyTorchToEquinoxTransformer:
             transform_forward_method.assert_called_once() if forward_method else transform_forward_method.assert_not_called()
 
     @pytest.mark.parametrize(
+        ("pytorch_code", "call_index"),
+        [
+            ("", []),
+            ("x = self.fc(x)", ["module"]),
+            ("import torch.nn.functional as F\nF.sigmoid()", ["functional"]),
+            ("import torch\ntorch.Tensor().view(x.size(0), -1)", ["method", "functional"]),
+            ("import torch.nn as nn\nnn.Conv2d(in_channels=16, out_channels=32, kernel_size=3, stride=1, padding=1)", ["module_init"]),
+        ],
+        ids=["no call", "module", "functional", "method and functional", "module_init"],
+    )
+    def test_visit_Call(self, pytorch_code: str, call_index: List[Literal["module", "functional", "method", "module_init"]]) -> None:  # noqa: N802
+        transformer = PyTorchToEquinoxTransformer()
+        tree = ast.parse(pytorch_code)
+        with (patch.object(PyTorchToEquinoxTransformer, '_transform_module_call') as transform_module_call,
+              patch.object(PyTorchToEquinoxTransformer, '_transform_functional_call') as transform_functional_call,
+              patch.object(PyTorchToEquinoxTransformer, '_transform_method_call') as transform_method_call,
+              patch.object(PyTorchToEquinoxTransformer, '_transform_module_init') as transform_module_init):
+            transformer.visit(tree)
+            transform_module_call.assert_called_once() if "module" in call_index else transform_module_call.assert_not_called()
+            transform_functional_call.assert_called_once() if "functional" in call_index else transform_functional_call.assert_not_called()
+            transform_method_call.assert_called_once() if "method" in call_index else transform_method_call.assert_not_called()
+            transform_module_init.assert_called_once() if "module_init" in call_index else transform_module_init.assert_not_called()
+
+    @pytest.mark.parametrize(
         ("code", "pytorch_module"),
         [
             ("class EmptyClass:pass", False),
@@ -237,31 +262,6 @@ class TestPyTorchToEquinoxTransformer:
                 else:
                     assert transformer._get_pytorch_module_base_index(node) == pytorch_module_index
 
-    @pytest.mark.parametrize(
-        ("code", "pytorch_module_init"),
-        [
-            ("nn.Linear(32 * 7 * 7, 3)", True),
-            ("nn.Conv1d(in_channels=1, out_channels=16, kernel_size=3, stride=1, padding=1)", True),
-            ("nn.Conv2d(in_channels=1, out_channels=16, kernel_size=3, stride=1, padding=1)", True),
-            ("nn.Conv3d(in_channels=1, out_channels=16, kernel_size=3, stride=1, padding=1)", True),
-            ("nn.BatchNorm1d(num_features=100)", True),
-            ("nn.BatchNorm2d(num_features=100)", True),
-            ("nn.BatchNorm3d(num_features=100)", True),
-            ("nn.Dropout(p=0.2)", True),
-            ("nn.Sequential(nn.Conv2d(1,20,5))", False),
-            ("ast.Load()", False),
-        ],
-        ids=["Linear", "Conv1d", "Conv2d", "Conv3d", "BatchNorm1d", "BatchNorm2d", "BatchNorm3d", "Dropout", "not supported Sequential", "not a pytorch module"],
-    )
-    def test_is_pytorch_module_init(self, code: str, pytorch_module_init: bool) -> None:  # noqa: FBT001
-        tree = ast.parse(code)
-        print(ast.dump(tree, indent=4))
-        for node in tree.body:
-            if isinstance(node, ast.Expr) and isinstance(node.value, ast.Call):
-                assert PyTorchToEquinoxTransformer._is_pytorch_module_init(node.value) == pytorch_module_init
-            else:
-               assert False
-
     def test_find_init_method(self) -> None:
         assert PyTorchToEquinoxTransformer._find_init_method(ast.parse("")) is None  # type: ignore[arg-type]
         assert PyTorchToEquinoxTransformer._find_init_method(ast.parse("class Test:pass").body[0]) is None  # type: ignore[arg-type]
@@ -328,6 +328,55 @@ class TestPyTorchToEquinoxTransformer:
                 assert isinstance(annotation.annotation.value.value, ast.Name)
                 assert annotation.annotation.value.value.id == "eqx"
         assert num_annotations == len(current_class_params)
+
+    def test_transform_init_method(self):
+        pass  # TODO: test _transform_init_method
+
+    def test_transform_forward_method(self):
+        pass  # TODO: test _transform_forward_method
+
+    def test_is_self_module_call(self):
+        pass  # TODO: test _is_self_module_call
+
+    def test_is_functional_call(self):
+        pass  # TODO: test _is_functional_call
+
+    @pytest.mark.parametrize(
+        ("code", "pytorch_module_init"),
+        [
+            ("nn.Linear(32 * 7 * 7, 3)", True),
+            ("nn.Conv1d(in_channels=1, out_channels=16, kernel_size=3, stride=1, padding=1)", True),
+            ("nn.Conv2d(in_channels=1, out_channels=16, kernel_size=3, stride=1, padding=1)", True),
+            ("nn.Conv3d(in_channels=1, out_channels=16, kernel_size=3, stride=1, padding=1)", True),
+            ("nn.BatchNorm1d(num_features=100)", True),
+            ("nn.BatchNorm2d(num_features=100)", True),
+            ("nn.BatchNorm3d(num_features=100)", True),
+            ("nn.Dropout(p=0.2)", True),
+            ("nn.Sequential(nn.Conv2d(1,20,5))", False),
+            ("ast.Load()", False),
+        ],
+        ids=["Linear", "Conv1d", "Conv2d", "Conv3d", "BatchNorm1d", "BatchNorm2d", "BatchNorm3d", "Dropout", "not supported Sequential", "not a pytorch module"],
+    )
+    def test_is_pytorch_module_init(self, code: str, pytorch_module_init: bool) -> None:  # noqa: FBT001
+        tree = ast.parse(code)
+        print(ast.dump(tree, indent=4))
+        for node in tree.body:
+            if isinstance(node, ast.Expr) and isinstance(node.value, ast.Call):
+                assert PyTorchToEquinoxTransformer._is_pytorch_module_init(node.value) == pytorch_module_init
+            else:
+               assert False
+
+    def test_transform_module_call(self):
+        pass  # TODO: test _transform_module_call
+
+    def test_transform_functional_call(self):
+        pass  # TODO: test _transform_functional_call
+
+    def test_transform_method_call(self):
+        pass  # TODO: test _transform_method_call
+
+    def test_transform_module_init(self):
+        pass  # TODO: test _transform_module_init
 
 def test_mlp_transpilation(snapshot_equinox_code: SnapshotAssertion):
     """Test transpilation of a PyTorch MLP to Equinox."""
