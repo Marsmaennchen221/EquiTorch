@@ -77,6 +77,49 @@ class TestPyTorchToEquinoxTransformer:
         assert compare_ast(tree.body[2], ast.Import(names=[ast.alias(name="equinox", asname="eqx")]))
 
     @pytest.mark.parametrize(
+        "pytorch_code",
+        [
+            "class NonPyTorchModule():pass",
+            "from abc import ABCMeta\nclass NonPyTorchModule(ABCMeta):pass",
+            "import torch.nn as nn\nclass TestClass(nn.Module):\n\tdef __init__(self, in_channels, num_classes):\n\t\tsuper(SimpleCNN, self).__init__()\n\t\tself.conv1 = nn.Conv2d(in_channels=in_channels, out_channels=16, kernel_size=3, stride=1, padding=1)\n\t\tself.conv2 = nn.Conv2d(in_channels=16, out_channels=32, kernel_size=3, stride=1, padding=1)\n\t\tself.fc = nn.Linear(32 * 7 * 7, num_classes)",
+            "import torch.nn as nn\nfrom abc import ABCMeta\nclass TestClass(nn.Module, ABCMeta):\n\tdef __init__(self, in_channels, num_classes):\n\t\tsuper(SimpleCNN, self).__init__()\n\t\tself.conv1 = nn.Conv2d(in_channels=in_channels, out_channels=16, kernel_size=3, stride=1, padding=1)\n\t\tself.conv2 = nn.Conv2d(in_channels=16, out_channels=32, kernel_size=3, stride=1, padding=1)\n\t\tself.fc = nn.Linear(32 * 7 * 7, num_classes)",
+            "import torch.nn as nn\nfrom abc import ABCMeta\nclass TestClass(ABCMeta, nn.Module):\n\tdef __init__(self, in_channels, num_classes):\n\t\tsuper(SimpleCNN, self).__init__()\n\t\tself.conv1 = nn.Conv2d(in_channels=in_channels, out_channels=16, kernel_size=3, stride=1, padding=1)\n\t\tself.conv2 = nn.Conv2d(in_channels=16, out_channels=32, kernel_size=3, stride=1, padding=1)\n\t\tself.fc = nn.Linear(32 * 7 * 7, num_classes)",
+            "import torch.nn as nn\nclass TestClass(nn.Module):\n\tdef __init__(self, in_channels, num_classes):\n\t\tsuper(SimpleCNN, self).__init__()",
+            "import torch.nn as nn\nclass TestClass(nn.Module):\n\tdef __init__(self, in_channels, num_classes):\n\t\tsuper(SimpleCNN, self).__init__()\n\t\tself.number = 40 + 2",
+            "import torch.nn as nn\nclass TestClass(nn.Module):\n\tdef __init__(self, in_channels, num_classes):\n\t\tsuper(SimpleCNN, self).__init__()\n\t\tself.conv1 = nn.Conv2d(in_channels=in_channels, out_channels=16, kernel_size=3, stride=1, padding=1)\n\t\tself.conv2 = nn.Conv2d(in_channels=16, out_channels=32, kernel_size=3, stride=1, padding=1)\n\t\tself.fc = nn.Linear(32 * 7 * 7, num_classes)\n\t\tself.constant = 42",
+            "import torch.nn as nn\nclass TestClass(nn.Module):\n\tdef __init__(self, in_channels, num_classes):\n\t\tsuper(SimpleCNN, self).__init__()\n\t\tself.conv1 = nn.Conv2d(in_channels=in_channels, out_channels=16, kernel_size=3, stride=1, padding=1)\n\t\ta = 2 + 40\n\t\tself.conv2 = nn.Conv2d(in_channels=16, out_channels=32, kernel_size=3, stride=1, padding=1)\n\t\tself.fc = nn.Linear(32 * 7 * 7, num_classes)",
+            "import torch.nn as nn\nclass TestClass(nn.Module):\n\tdef __init__(self, in_channels, num_classes):\n\t\tsuper(SimpleCNN, self).__init__()\n\t\tself.conv1 = nn.Conv2d(in_channels=in_channels, out_channels=16, kernel_size=3, stride=1, padding=1)\n\t\tself.conv1 = nn.Conv3d(in_channels=16, out_channels=32, kernel_size=3, stride=1, padding=1)",
+        ],
+        ids=["NonPytorchModule", "ABCMeta", "3 torch Assignments", "3 torch Assignments + ABCMeta", "ABCMeta + 3 torch Assignments", "no Assignments", "no torch Assignments", "torch Assignments and non torch Assignments", "torch Assignments and non torch Assignments not to self", "multiple torch Assignments same name"],
+    )
+    def test_visit_ClassDef(self, pytorch_code: str) -> None:  # noqa: N802
+        transformer = PyTorchToEquinoxTransformer()
+        tree = ast.parse(pytorch_code)
+        num_bases = -1
+        is_pytorch_module = False
+        for node in tree.body:
+            if isinstance(node, ast.ClassDef):
+                num_bases = len(node.bases)
+                try:
+                    is_pytorch_module = transformer._is_pytorch_module(node)
+                except KeyError:
+                    is_pytorch_module = False
+                break
+        new_tree = transformer.visit(tree)
+        for node in new_tree.body:
+            if isinstance(node, ast.ClassDef):
+                assert len(node.bases) == num_bases
+                if not is_pytorch_module:
+                    return
+                pytorch_base_index = transformer._get_pytorch_module_base_index(node)
+                assert isinstance(node.bases[pytorch_base_index], ast.Attribute)
+                assert node.bases[pytorch_base_index].attr == "Module"
+                assert isinstance(node.bases[pytorch_base_index].value, ast.Name)
+                assert node.bases[pytorch_base_index].value.id == "eqx"
+                return
+        assert False  # Should never be called if the test contains a ast.ClassDef
+
+    @pytest.mark.parametrize(
         ("code", "pytorch_module"),
         [
             ("class EmptyClass:pass", False),
@@ -122,6 +165,58 @@ class TestPyTorchToEquinoxTransformer:
         for node in tree.body:
             if isinstance(node, ast.ClassDef):
                 assert transformer._is_pytorch_module(node) == pytorch_module
+
+
+    @pytest.mark.parametrize(
+        ("code", "pytorch_module_index"),
+        [
+            ("class EmptyClass:pass", -1),
+            ("class EmptyClass():pass", -1),
+            ("import torch\nclass PyTorchClass(torch.nn.Module):pass", 0),
+            ("import torch as T\nclass PyTorchClass(T.nn.Module):pass", 0),
+            ("import wrong as torch\nclass PyTorchClass(torch.nn.Module):pass", -1),
+            ("from torch import nn\nclass PyTorchClass(nn.Module):pass", 0),
+            ("import torch.nn\nclass PyTorchClass(nn.Module):pass", 0),
+            ("from torch import nn as equinox\nclass PyTorchClass(equinox.Module):pass", 0),
+            ("from torch.nn import Module\nclass PyTorchClass(Module):pass", 0),
+            ("from torch.nn import Module as mod\nclass PyTorchClass(mod):pass", 0),
+            ("import equinox\nclass EquinoxClass(equinox.Module):pass", -1),
+            ("import equinox as nn\nclass EquinoxClass(nn.Module):pass", -1),
+            ("from equinox import Module\nclass EquinoxClass(Module):pass", -1),
+            ("from equinox import Module as mod\nclass EquinoxClass(mod):pass", -1),
+            ("from abc import ABCMeta\nfrom torch.nn import Module\nclass PyTorchClass(ABCMeta, Module):pass", 1),
+            ("from abc import ABCMeta\nfrom torch.nn import Module\nclass PyTorchClass(Module, ABCMeta):pass", 0),
+        ],
+        ids=[
+            "EmptyClass",
+            "EmptyClass()",
+            "torch import",
+            "torch import Alias",
+            "torch import wrong Alias",
+            "nn import",
+            "torch.nn import",
+            "nn import Alias",
+            "torch Module import",
+            "torch Module import Alias",
+            "equinox import",
+            "equinox as nn",
+            "equinox Module import",
+            "equinox Alias",
+            "ABCMeta plus torch Module",
+            "torch Module plus ABCMeta",
+        ],
+    )
+    def test_get_pytorch_module_base_index(self, code: str, pytorch_module_index: int) -> None:  # noqa: FBT001
+        tree = ast.parse(code)
+        transformer = PyTorchToEquinoxTransformer()
+        transformer.visit(ast.parse(code))
+        for node in tree.body:
+            if isinstance(node, ast.ClassDef):
+                if pytorch_module_index == -1:
+                    with pytest.raises(ValueError):
+                        transformer._get_pytorch_module_base_index(node)
+                else:
+                    assert transformer._get_pytorch_module_base_index(node) == pytorch_module_index
 
     @pytest.mark.parametrize(
         ("code", "pytorch_module_init"),

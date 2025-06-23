@@ -77,26 +77,28 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
             return node
 
         # Track parameters for current class
-        current_class_params: dict
+        current_class_params: dict | None = None
         self.key_counter = 0
 
         # Extract parameters from __init__ method
         init_method = self._find_init_method(node)
-        if init_method:
+        if init_method is not None:
             current_class_params = self._extract_parameters(init_method)
 
         # Transform the class
         new_node: ast.ClassDef = self.generic_visit(node)  # type: ignore[assignment]
 
         # Change base class to eqx.Module
-        new_node.bases = [ast.Attribute(
+        base_index = self._get_pytorch_module_base_index(node)
+        new_node.bases[base_index] = ast.Attribute(
             value=ast.Name(id="eqx", ctx=ast.Load()),
             attr="Module",
             ctx=ast.Load(),
-        )]
+        )
 
-        # Add type annotations for parameters
-        self._add_type_annotations(new_node, current_class_params)
+        # Add type annotations for parameters if parameters exist
+        if current_class_params is not None:
+            self._add_type_annotations(new_node, current_class_params)
 
         return new_node
 
@@ -138,6 +140,20 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
                     or (isinstance(base, ast.Name) and self.current_imports[base.id] == "torch.nn.Module")):
                 return True
         return False
+
+    def _get_pytorch_module_base_index(self, node: ast.ClassDef) -> int:
+        """Return index of torch.nn.Module base if class inherits it."""
+        if self._is_pytorch_module(node):
+            for index, base in enumerate(node.bases):
+                if (
+                        (isinstance(base, ast.Attribute) and base.attr == "Module" and isinstance(base.value, ast.Attribute)
+                         and base.value.attr == "nn" and isinstance(base.value.value, ast.Name)
+                         and self.current_imports[base.value.value.id] == "torch")
+                        or (isinstance(base, ast.Attribute) and base.attr == "Module" and isinstance(base.value, ast.Name)
+                            and self.current_imports[base.value.id] == "torch.nn")
+                        or (isinstance(base, ast.Name) and self.current_imports[base.id] == "torch.nn.Module")):
+                    return index
+        raise ValueError("Class does not inherit from torch.nn.Module")
 
     @staticmethod
     def _find_init_method(node: ast.ClassDef) -> ast.FunctionDef | None:
