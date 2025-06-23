@@ -332,7 +332,9 @@ class TestPyTorchToEquinoxTransformer:
         pass  # TODO: test _transform_init_method
 
     def test_transform_forward_method(self):
-        pass  # TODO: test _transform_forward_method
+        new_tree = transform_to_equinox_ast("def forward(self, x):\n\treturn x")
+        assert isinstance(new_tree.body[-1], ast.FunctionDef)
+        assert new_tree.body[-1].name == "__call__"
 
     def test_is_self_module_call(self):
         self_module_call = ast.parse("self.forward(x)")
