@@ -115,11 +115,11 @@ class TestPyTorchToEquinoxTransformer:
                     return
                 pytorch_base_index = transformer._get_pytorch_module_base_index(node)
                 assert isinstance(node.bases[pytorch_base_index], ast.Attribute)
-                assert node.bases[pytorch_base_index].attr == "Module"
-                assert isinstance(node.bases[pytorch_base_index].value, ast.Name)
-                assert node.bases[pytorch_base_index].value.id == "eqx"
+                assert node.bases[pytorch_base_index].attr == "Module"  # type: ignore[attr-defined]
+                assert isinstance(node.bases[pytorch_base_index].value, ast.Name)  # type: ignore[attr-defined]
+                assert node.bases[pytorch_base_index].value.id == "eqx"  # type: ignore[attr-defined]
                 return
-        assert False  # Should never be called if the test contains a ast.ClassDef
+        pytest.fail("Body did not contain a ast.ClassDef")
 
     @pytest.mark.parametrize(
         ("pytorch_code", "init_method", "forward_method"),
@@ -257,7 +257,7 @@ class TestPyTorchToEquinoxTransformer:
         for node in tree.body:
             if isinstance(node, ast.ClassDef):
                 if pytorch_module_index == -1:
-                    with pytest.raises(ValueError):
+                    with pytest.raises(ValueError, match=r"Class does not inherit from torch\.nn\.Module"):
                         transformer._get_pytorch_module_base_index(node)
                 else:
                     assert transformer._get_pytorch_module_base_index(node) == pytorch_module_index
@@ -318,8 +318,8 @@ class TestPyTorchToEquinoxTransformer:
         num_annotations = 0
         for annotation in class_def.body:
             if isinstance(annotation, ast.AnnAssign):
-                assert annotation.target.id in current_class_params
-                annotation_info: dict[str, str | ast.Call] = current_class_params[annotation.target.id]
+                assert annotation.target.id in current_class_params  # type: ignore[union-attr]
+                annotation_info: dict[str, str | ast.Call] = current_class_params[annotation.target.id]  # type: ignore[union-attr]
                 num_annotations += 1
                 assert isinstance(annotation.annotation, ast.Attribute)
                 assert annotation.annotation.attr == annotation_info["type"]
@@ -363,7 +363,7 @@ class TestPyTorchToEquinoxTransformer:
         ],
         ids=["torch.nn.functional as F", "torch.nn.functional", "wrong as W", "torch as T", "torch", "wrong", "torch.nn as N functional", "torch as T functional", "torch functional", "torch torch.W.functional", "torch torch.nn.W functional", "torch.nn as N wrong functional", ],
     )
-    def test_is_functional_call(self, import_code: str, code: str, is_functional_call: bool):
+    def test_is_functional_call(self, import_code: str, code: str, is_functional_call: bool):  # noqa: FBT001
         tree = ast.parse(code)
         import_tree = ast.parse(import_code)
         transformer = PyTorchToEquinoxTransformer()
@@ -372,8 +372,8 @@ class TestPyTorchToEquinoxTransformer:
         for i, node in enumerate(tree.body):  # Jump over import statements
             if isinstance(node, ast.Expr):
                 node_index = i
-        assert isinstance(tree.body[node_index].value, ast.Call)
-        assert transformer._is_functional_call(tree.body[node_index].value) == is_functional_call
+        assert isinstance(tree.body[node_index].value, ast.Call)  # type: ignore[attr-defined]
+        assert transformer._is_functional_call(tree.body[node_index].value) == is_functional_call  # type: ignore[attr-defined]
 
     @pytest.mark.parametrize(
         ("code", "pytorch_module_init"),
@@ -393,12 +393,11 @@ class TestPyTorchToEquinoxTransformer:
     )
     def test_is_pytorch_module_init(self, code: str, pytorch_module_init: bool) -> None:  # noqa: FBT001
         tree = ast.parse(code)
-        print(ast.dump(tree, indent=4))
         for node in tree.body:
             if isinstance(node, ast.Expr) and isinstance(node.value, ast.Call):
                 assert PyTorchToEquinoxTransformer._is_pytorch_module_init(node.value) == pytorch_module_init
             else:
-               assert False
+               pytest.fail("Not all nodes are ast.Expr with node.value being ast.Call")
 
     def test_transform_module_call(self):
         pass  # TODO: test _transform_module_call

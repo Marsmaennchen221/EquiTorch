@@ -167,10 +167,10 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
     def _extract_parameters(self, init_method: ast.FunctionDef) -> dict[str, dict[str, str | ast.Call]]:
         """Extract module parameters from __init__ method."""
         class ParameterExtractor(ast.NodeVisitor):
-            def __init__(self):
+            def __init__(self) -> None:
                 self.current_class_params: dict[str, dict[str, str | ast.Call]] = {}
 
-            def visit_Assign(self, node: ast.Assign):  # noqa: N802
+            def visit_Assign(self, node: ast.Assign) -> None:  # noqa: N802
                 if (len(node.targets) == 1 and
                     isinstance(node.targets[0], ast.Attribute) and
                     isinstance(node.targets[0].value, ast.Name) and
@@ -179,7 +179,7 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
 
                     param_name = node.targets[0].attr
                     if PyTorchToEquinoxTransformer._is_pytorch_module_init(node.value):
-                        module_type = node.value.func.attr
+                        module_type = node.value.func.attr  # type: ignore[attr-defined]
                         self.current_class_params[param_name] = ({
                             "type": module_type,
                             "call_node": node.value,
@@ -202,7 +202,7 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
                         attr="nn",
                         ctx=ast.Load(),
                     ),
-                    attr=param_body["type"],
+                    attr=str(param_body["type"]),
                     ctx=ast.Load(),
                 ),
                 value=None,
@@ -279,7 +279,7 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
     def _is_functional_call(self, node: ast.Call) -> bool:
         """Check if this is a F.function(x) or torch.function(x) call."""
         module_path: List[str] = []
-        inner_node = node.func.value
+        inner_node = node.func.value  # type: ignore[attr-defined]
         while isinstance(inner_node, ast.Attribute):
             module_path.append(inner_node.attr)
             inner_node = inner_node.value
