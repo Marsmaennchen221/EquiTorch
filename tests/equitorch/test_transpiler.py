@@ -1,6 +1,7 @@
 import ast
 from pathlib import Path
 from typing import List
+from unittest.mock import patch
 
 import pytest
 from syrupy import SnapshotAssertion
@@ -118,6 +119,24 @@ class TestPyTorchToEquinoxTransformer:
                 assert node.bases[pytorch_base_index].value.id == "eqx"
                 return
         assert False  # Should never be called if the test contains a ast.ClassDef
+
+    @pytest.mark.parametrize(
+        ("pytorch_code", "init_method", "forward_method"),
+        [
+            ("import torch.nn as nn\nclass TestClass(nn.Module):pass", False, False),
+            ("import torch.nn as nn\nclass TestClass(nn.Module):\n\tdef __init__():pass", True, False),
+            ("import torch.nn as nn\nclass TestClass(nn.Module):\n\tdef forward():pass", False, True),
+            ("import torch.nn as nn\nclass TestClass(nn.Module):\n\tdef __init__():pass\n\tdef forward():pass", True, True),
+        ],
+        ids=["no-method", "init", "forward", "init and forward"],
+    )
+    def test_visit_FunctionDef(self, pytorch_code: str, init_method: bool, forward_method: bool) -> None:  # noqa: N802 FBT001
+        transformer = PyTorchToEquinoxTransformer()
+        tree = ast.parse(pytorch_code)
+        with patch.object(PyTorchToEquinoxTransformer, '_transform_init_method') as transform_init_method, patch.object(PyTorchToEquinoxTransformer, '_transform_forward_method') as transform_forward_method:
+            transformer.visit(tree)
+            transform_init_method.assert_called_once() if init_method else transform_init_method.assert_not_called()
+            transform_forward_method.assert_called_once() if forward_method else transform_forward_method.assert_not_called()
 
     @pytest.mark.parametrize(
         ("code", "pytorch_module"),
