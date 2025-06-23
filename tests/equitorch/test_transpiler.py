@@ -336,7 +336,14 @@ class TestPyTorchToEquinoxTransformer:
         pass  # TODO: test _transform_forward_method
 
     def test_is_self_module_call(self):
-        pass  # TODO: test _is_self_module_call
+        self_module_call = ast.parse("self.forward(x)")
+        non_self_module_call = ast.parse("a.forward(x)")
+        assert isinstance(self_module_call.body[0], ast.Expr)
+        assert isinstance(non_self_module_call.body[0], ast.Expr)
+        assert isinstance(self_module_call.body[0].value, ast.Call)
+        assert isinstance(non_self_module_call.body[0].value, ast.Call)
+        assert PyTorchToEquinoxTransformer._is_self_module_call(self_module_call.body[0].value)
+        assert not PyTorchToEquinoxTransformer._is_self_module_call(non_self_module_call.body[0].value)
 
     def test_is_functional_call(self):
         pass  # TODO: test _is_functional_call
