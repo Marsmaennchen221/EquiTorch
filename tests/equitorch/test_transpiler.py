@@ -1,11 +1,10 @@
 import ast
 from pathlib import Path
-from typing import List
+from typing import Literal
 from unittest.mock import patch
 
 import pytest
 from syrupy import SnapshotAssertion
-from typing_extensions import Literal
 
 from equitorch.transpiler import PyTorchToEquinoxTransformer, transpile
 from tests.helpers.utils import compare_ast, read_python_code
@@ -134,7 +133,7 @@ class TestPyTorchToEquinoxTransformer:
     def test_visit_FunctionDef(self, pytorch_code: str, init_method: bool, forward_method: bool) -> None:  # noqa: N802 FBT001
         transformer = PyTorchToEquinoxTransformer()
         tree = ast.parse(pytorch_code)
-        with patch.object(PyTorchToEquinoxTransformer, '_transform_init_method') as transform_init_method, patch.object(PyTorchToEquinoxTransformer, '_transform_forward_method') as transform_forward_method:
+        with patch.object(PyTorchToEquinoxTransformer, "_transform_init_method") as transform_init_method, patch.object(PyTorchToEquinoxTransformer, "_transform_forward_method") as transform_forward_method:
             transformer.visit(tree)
             transform_init_method.assert_called_once() if init_method else transform_init_method.assert_not_called()
             transform_forward_method.assert_called_once() if forward_method else transform_forward_method.assert_not_called()
@@ -150,13 +149,13 @@ class TestPyTorchToEquinoxTransformer:
         ],
         ids=["no call", "module", "functional", "method and functional", "module_init"],
     )
-    def test_visit_Call(self, pytorch_code: str, call_index: List[Literal["module", "functional", "method", "module_init"]]) -> None:  # noqa: N802
+    def test_visit_Call(self, pytorch_code: str, call_index: list[Literal["module", "functional", "method", "module_init"]]) -> None:  # noqa: N802
         transformer = PyTorchToEquinoxTransformer()
         tree = ast.parse(pytorch_code)
-        with (patch.object(PyTorchToEquinoxTransformer, '_transform_module_call') as transform_module_call,
-              patch.object(PyTorchToEquinoxTransformer, '_transform_functional_call') as transform_functional_call,
-              patch.object(PyTorchToEquinoxTransformer, '_transform_method_call') as transform_method_call,
-              patch.object(PyTorchToEquinoxTransformer, '_transform_module_init') as transform_module_init):
+        with (patch.object(PyTorchToEquinoxTransformer, "_transform_module_call") as transform_module_call,
+              patch.object(PyTorchToEquinoxTransformer, "_transform_functional_call") as transform_functional_call,
+              patch.object(PyTorchToEquinoxTransformer, "_transform_method_call") as transform_method_call,
+              patch.object(PyTorchToEquinoxTransformer, "_transform_module_init") as transform_module_init):
             transformer.visit(tree)
             transform_module_call.assert_called_once() if "module" in call_index else transform_module_call.assert_not_called()
             transform_functional_call.assert_called_once() if "functional" in call_index else transform_functional_call.assert_not_called()
@@ -250,7 +249,7 @@ class TestPyTorchToEquinoxTransformer:
             "torch Module plus ABCMeta",
         ],
     )
-    def test_get_pytorch_module_base_index(self, code: str, pytorch_module_index: int) -> None:  # noqa: FBT001
+    def test_get_pytorch_module_base_index(self, code: str, pytorch_module_index: int) -> None:
         tree = ast.parse(code)
         transformer = PyTorchToEquinoxTransformer()
         transformer.visit(ast.parse(code))
@@ -283,7 +282,7 @@ class TestPyTorchToEquinoxTransformer:
         ],
         ids=["3 torch Assignments", "no Assignments", "no torch Assignments", "torch Assignments and non torch Assignments", "torch Assignments and non torch Assignments not to self", "multiple torch Assignments same name"],
     )
-    def test_extract_parameters(self, code: str, names: List[str]) -> None:
+    def test_extract_parameters(self, code: str, names: list[str]) -> None:
         tree = ast.parse(code)
         func_def: ast.FunctionDef = tree.body[0]  # type: ignore[assignment]
         transformer = PyTorchToEquinoxTransformer()
@@ -361,7 +360,7 @@ class TestPyTorchToEquinoxTransformer:
             ("import torch", "torch.nn.W.function(x)", False),
             ("import torch.nn as N", "N.wrong.function(x)", False),
         ],
-        ids=["torch.nn.functional as F", "torch.nn.functional", "wrong as W", "torch as T", "torch", "wrong", "torch.nn as N functional", "torch as T functional", "torch functional", "torch torch.W.functional", "torch torch.nn.W functional", "torch.nn as N wrong functional", ],
+        ids=["torch.nn.functional as F", "torch.nn.functional", "wrong as W", "torch as T", "torch", "wrong", "torch.nn as N functional", "torch as T functional", "torch functional", "torch torch.W.functional", "torch torch.nn.W functional", "torch.nn as N wrong functional" ],
     )
     def test_is_functional_call(self, import_code: str, code: str, is_functional_call: bool):  # noqa: FBT001
         tree = ast.parse(code)
