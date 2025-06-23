@@ -4,6 +4,7 @@ Replaces the complex manual AST processing with clean, standard patterns
 and uses separated converter modules for better organization.
 """
 import ast
+from typing import List
 
 from .converters import (
     # Functional converters
@@ -275,11 +276,19 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
         return (isinstance(node.func.value, ast.Name) and  # type: ignore[attr-defined]
                 node.func.value.id == "self")  # type: ignore[attr-defined]
 
-    @staticmethod
-    def _is_functional_call(node: ast.Call) -> bool:
+    def _is_functional_call(self, node: ast.Call) -> bool:
         """Check if this is a F.function(x) or torch.function(x) call."""
-        return (isinstance(node.func.value, ast.Name) and  # type: ignore[attr-defined]
-                node.func.value.id in ["F", "torch"])  # type: ignore[attr-defined]
+        module_path: List[str] = []
+        inner_node = node.func.value
+        while isinstance(inner_node, ast.Attribute):
+            module_path.append(inner_node.attr)
+            inner_node = inner_node.value
+        if isinstance(inner_node, ast.Name):
+            if inner_node.id not in self.current_imports:
+                return False
+            module_path.append(self.current_imports[inner_node.id])
+        module_path.reverse()
+        return '.'.join(module_path) in ["torch.nn.functional", "torch"]
 
     @staticmethod
     def _is_pytorch_module_init(node: ast.Call) -> bool:

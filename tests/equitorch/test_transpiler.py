@@ -345,8 +345,35 @@ class TestPyTorchToEquinoxTransformer:
         assert PyTorchToEquinoxTransformer._is_self_module_call(self_module_call.body[0].value)
         assert not PyTorchToEquinoxTransformer._is_self_module_call(non_self_module_call.body[0].value)
 
-    def test_is_functional_call(self):
-        pass  # TODO: test _is_functional_call
+    @pytest.mark.parametrize(
+        ("import_code", "code", "is_functional_call"),
+        [
+            ("import torch.nn.functional as F", "F.function(x)", True),
+            ("import torch.nn.functional", "functional.function(x)", True),
+            ("import wrong as W", "W.function(x)", False),
+            ("import torch as T", "T.function(x)", True),
+            ("import torch", "torch.function(x)", True),
+            ("import wrong", "wrong.function(x)", False),
+            ("import torch.nn as N", "N.functional.function(x)", True),
+            ("import torch as T", "T.nn.functional.function(x)", True),
+            ("import torch", "torch.nn.functional.function(x)", True),
+            ("import torch", "torch.W.functional.function(x)", False),
+            ("import torch", "torch.nn.W.function(x)", False),
+            ("import torch.nn as N", "N.wrong.function(x)", False),
+        ],
+        ids=["torch.nn.functional as F", "torch.nn.functional", "wrong as W", "torch as T", "torch", "wrong", "torch.nn as N functional", "torch as T functional", "torch functional", "torch torch.W.functional", "torch torch.nn.W functional", "torch.nn as N wrong functional", ],
+    )
+    def test_is_functional_call(self, import_code: str, code: str, is_functional_call: bool):
+        tree = ast.parse(code)
+        import_tree = ast.parse(import_code)
+        transformer = PyTorchToEquinoxTransformer()
+        transformer.visit(import_tree)
+        node_index = 0
+        for i, node in enumerate(tree.body):  # Jump over import statements
+            if isinstance(node, ast.Expr):
+                node_index = i
+        assert isinstance(tree.body[node_index].value, ast.Call)
+        assert transformer._is_functional_call(tree.body[node_index].value) == is_functional_call
 
     @pytest.mark.parametrize(
         ("code", "pytorch_module_init"),
