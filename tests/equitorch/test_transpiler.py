@@ -431,7 +431,6 @@ def test_model_compilation_and_jit():
         key, subkey = jax.random.split(key)
         model = module.MLP(10, 20, 5, key=subkey)
         
-        # Test JIT compiled forward pass
         key, subkey = jax.random.split(key)
         test_input = _generate_random_input((3, 10), subkey)
         
