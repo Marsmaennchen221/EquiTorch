@@ -145,7 +145,7 @@ class TestPyTorchToEquinoxTransformer:
             ("", []),
             ("x = self.fc(x)", ["module"]),
             ("import torch.nn.functional as F\nF.sigmoid()", ["functional"]),
-            ("import torch\ntorch.Tensor().view(x.size(0), -1)", ["method", "functional"]),
+            ("import torch\nx = torch.Tensor()\nx.view()", ["method", "functional"]),
             ("import torch.nn as nn\nnn.Conv2d(in_channels=16, out_channels=32, kernel_size=3, stride=1, padding=1)", ["module_init"]),
         ],
         ids=["no call", "module", "functional", "method and functional", "module_init"],
@@ -408,9 +408,9 @@ class TestPyTorchToEquinoxTransformer:
         ("code", "module_name", "function_name"),
         [
             ("import torch.nn.functional as F\nF.sigmoid()", "F", "sigmoid"),
-            ("import torch\ntorch.Tensor().view(x.size(0), -1)", "torch", "Tensor"),
+            ("import torch\ntorch.Tensor()", "torch", "Tensor"),
         ],
-        ids=["functional", "chained functional"],
+        ids=["nn.functional", "torch"],
     )
     def test_transform_functional_call(self, code: str, module_name: str, function_name: str) -> None:
         tree = ast.parse(code)
@@ -423,8 +423,23 @@ class TestPyTorchToEquinoxTransformer:
             transformer.visit(tree)
             transform_functional_call.assert_called_once_with(call, module_name, function_name)
 
-    def test_transform_method_call(self):
-        pass  # TODO: test _transform_method_call
+    @pytest.mark.parametrize(
+        ("code", "method_name"),
+        [
+            ("import torch\nx = torch.Tensor()\nx.size()", "size"),
+            ("import torch\nx = torch.Tensor()\nx.reshape()", "reshape"),
+            ("import torch\nx = torch.Tensor()\nx.flatten()", "flatten"),
+        ],
+        ids=["size", "reshape", "flatten"],
+    )
+    def test_transform_method_call(self, code: str, method_name: str) -> None:
+        tree = ast.parse(code)
+        transformer = PyTorchToEquinoxTransformer()
+        call = tree.body[-1].value
+
+        with patch.object(converters, "transform_method_call") as transform_method_call:
+            transformer.visit(tree)
+            transform_method_call.assert_called_once_with(call, method_name)
 
     def test_transform_module_init(self):
         pass  # TODO: test _transform_module_init

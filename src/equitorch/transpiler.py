@@ -12,8 +12,6 @@ from equitorch.converters import (
     # Module converters
     is_supported_module,
     is_tensor_method_call,
-    # Method converters
-    transform_method_call,
 )
 
 
@@ -341,6 +339,7 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
         """Transform x.method() calls using modular converters."""
         method_name = get_method_name(node)
         if method_name:
+            from equitorch.converters import transform_method_call  # import inside this function so that mock test works
             return transform_method_call(node, method_name)
         return node
 
