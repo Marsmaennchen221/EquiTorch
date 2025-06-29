@@ -441,8 +441,50 @@ class TestPyTorchToEquinoxTransformer:
             transformer.visit(tree)
             transform_method_call.assert_called_once_with(call, method_name)
 
-    def test_transform_module_init(self):
-        pass  # TODO: test _transform_module_init
+    @pytest.mark.parametrize(
+        ("code", "num_of_modules"),
+        [
+            ("import torch.nn as nn\nnn.Conv2d(in_channels=16, out_channels=32, kernel_size=3, stride=1, padding=1)", 1),
+            ("import torch.nn as nn\nnn.Conv2d(in_channels=16, out_channels=32, kernel_size=3, stride=1, padding=1)\nnn.Conv2d(in_channels=16, out_channels=32, kernel_size=3, stride=1, padding=1)", 2),
+        ],
+        ids=["one module", "two modules"],
+    )
+    def test_transform_module_init(self, code: str, num_of_modules: int) -> None:
+        tree = ast.parse(code)
+        transformer = PyTorchToEquinoxTransformer()
+        transformer.visit(tree)
+        assert not isinstance(tree.body[-num_of_modules-1], ast.Expr)  # No more modules than expected
+        for module_index in range(num_of_modules):
+            assert isinstance(tree.body[-num_of_modules+module_index], ast.Expr)
+            assert isinstance(tree.body[-num_of_modules+module_index].value, ast.Call)
+            assert tree.body[-num_of_modules+module_index].value.keywords[-1].arg == "key"
+            assert isinstance(tree.body[-num_of_modules+module_index].value.keywords[-1].value, ast.Name)
+            assert tree.body[-num_of_modules+module_index].value.keywords[-1].value.id == f"key_{module_index}"
+
+    def test_transform_module_init_reset_key_counter(self) -> None:
+        code = ("import torch.nn as nn\n"
+                "nn.Conv2d(in_channels=16, out_channels=32, kernel_size=3, stride=1, padding=1)\n"
+                "nn.Conv2d(in_channels=16, out_channels=32, kernel_size=3, stride=1, padding=1)\n"
+                "class NewClass(nn.Module):\n"
+                "\tnn.Conv2d(in_channels=16, out_channels=32, kernel_size=3, stride=1, padding=1)\n"
+                "\tnn.Conv2d(in_channels=16, out_channels=32, kernel_size=3, stride=1, padding=1)")
+        tree = ast.parse(code)
+        transformer = PyTorchToEquinoxTransformer()
+        transformer.visit(tree)
+        assert not isinstance(tree.body[-4], ast.Expr)  # No more modules than expected
+        for key_index, node_index in enumerate([-3, -2]):
+            assert isinstance(tree.body[node_index], ast.Expr)
+            assert isinstance(tree.body[node_index].value, ast.Call)
+            assert tree.body[node_index].value.keywords[-1].arg == "key"
+            assert isinstance(tree.body[node_index].value.keywords[-1].value, ast.Name)
+            assert tree.body[node_index].value.keywords[-1].value.id == f"key_{key_index}"
+        assert isinstance(tree.body[-1], ast.ClassDef)  # ClassDef should reset key counter
+        for key_index, node_index in enumerate([-2, -1]):
+            assert isinstance(tree.body[-1].body[node_index], ast.Expr)
+            assert isinstance(tree.body[-1].body[node_index].value, ast.Call)
+            assert tree.body[-1].body[node_index].value.keywords[-1].arg == "key"
+            assert isinstance(tree.body[-1].body[node_index].value.keywords[-1].value, ast.Name)
+            assert tree.body[-1].body[node_index].value.keywords[-1].value.id == f"key_{key_index}"
 
 def test_mlp_transpilation(snapshot_equinox_code: SnapshotAssertion):
     """Test transpilation of a PyTorch MLP to Equinox."""
