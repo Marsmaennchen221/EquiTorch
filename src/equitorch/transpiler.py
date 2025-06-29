@@ -5,14 +5,13 @@ and uses separated converter modules for better organization.
 """
 import ast
 
-from .converters import (
+from equitorch.converters import (
     # Functional converters
     get_method_name,
     get_module_converter,
     # Module converters
     is_supported_module,
     is_tensor_method_call,
-    transform_functional_call,
     # Method converters
     transform_method_call,
 )
@@ -334,6 +333,7 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
         func_name = node.func.attr  # type: ignore[attr-defined]
 
         # Use the modular functional converter
+        from equitorch.converters import transform_functional_call  # import inside this function so that mock test works
         return transform_functional_call(node, module_name, func_name)
 
     @staticmethod

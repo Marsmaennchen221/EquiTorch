@@ -6,6 +6,7 @@ from unittest.mock import patch
 import pytest
 from syrupy import SnapshotAssertion
 
+from equitorch import converters
 from equitorch.transpiler import PyTorchToEquinoxTransformer, transpile
 from tests.helpers.utils import compare_ast, read_python_code
 
@@ -403,8 +404,24 @@ class TestPyTorchToEquinoxTransformer:
     def test_transform_module_call(self):
         pass  # TODO: test _transform_module_call
 
-    def test_transform_functional_call(self):
-        pass  # TODO: test _transform_functional_call
+    @pytest.mark.parametrize(
+        ("code", "module_name", "function_name"),
+        [
+            ("import torch.nn.functional as F\nF.sigmoid()", "F", "sigmoid"),
+            ("import torch\ntorch.Tensor().view(x.size(0), -1)", "torch", "Tensor"),
+        ],
+        ids=["functional", "chained functional"],
+    )
+    def test_transform_functional_call(self, code: str, module_name: str, function_name: str) -> None:
+        tree = ast.parse(code)
+        transformer = PyTorchToEquinoxTransformer()
+        call = tree.body[-1].value
+        while isinstance(call.func, ast.Attribute) and isinstance(call.func.value, ast.Call):
+            call = call.func.value
+
+        with patch.object(converters, "transform_functional_call") as transform_functional_call:
+            transformer.visit(tree)
+            transform_functional_call.assert_called_once_with(call, module_name, function_name)
 
     def test_transform_method_call(self):
         pass  # TODO: test _transform_method_call
