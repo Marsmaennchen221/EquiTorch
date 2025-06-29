@@ -401,8 +401,44 @@ class TestPyTorchToEquinoxTransformer:
             else:
                pytest.fail("Not all nodes are ast.Expr with node.value being ast.Call")
 
-    def test_transform_module_call(self):
-        pass  # TODO: test _transform_module_call
+    @pytest.mark.parametrize(
+        "code",
+        [
+            "x = self.function1(y)",
+            "a = self.function2(b, c)",
+        ],
+        ids=["one arg", "two args"],
+    )
+    def test_transform_module_call(self, code: str) -> None:
+        tree = ast.parse(code)
+        target_name = tree.body[-1].targets[0].id
+        module_function_name = tree.body[-1].value.func.attr
+        module_function_variable_num = len(tree.body[-1].value.args)
+        module_function_args = []
+        for arg in tree.body[-1].value.args:
+            module_function_args.append((type(arg), arg.id))
+        transformer = PyTorchToEquinoxTransformer()
+        transformer.visit(tree)
+        assert isinstance(tree.body[-1], ast.Assign)
+        assert len(tree.body[-1].targets) == 1
+        assert isinstance(tree.body[-1].targets[0], ast.Name)
+        assert tree.body[-1].targets[0].id == target_name
+        assert tree.body[-1].targets[0].ctx.__class__.__name__ == ast.Store().__class__.__name__
+        assert isinstance(tree.body[-1].value, ast.Call)
+        assert isinstance(tree.body[-1].value.func, ast.Call)
+        assert isinstance(tree.body[-1].value.func.func, ast.Attribute)
+        assert tree.body[-1].value.func.func.attr == "vmap"
+        assert isinstance(tree.body[-1].value.func.func.value, ast.Name)
+        assert tree.body[-1].value.func.func.value.id == "jax"
+        assert len(tree.body[-1].value.func.args) == 1
+        assert isinstance(tree.body[-1].value.func.args[0], ast.Attribute)
+        assert tree.body[-1].value.func.args[0].attr == module_function_name
+        assert isinstance(tree.body[-1].value.func.args[0].value, ast.Name)
+        assert tree.body[-1].value.func.args[0].value.id == "self"
+        assert len(tree.body[-1].value.args) == module_function_variable_num
+        for i, arg in enumerate(tree.body[-1].value.args):
+            assert isinstance(arg, module_function_args[i][0])
+            assert arg.id == module_function_args[i][1]
 
     @pytest.mark.parametrize(
         ("code", "module_name", "function_name"),
