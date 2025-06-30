@@ -56,6 +56,7 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
         imports = [
             ast.Import(names=[ast.alias(name="jax", asname=None)]),
             ast.Import(names=[ast.alias(name="jax.numpy", asname="jnp")]),
+            ast.Import(names=[ast.alias(name="jax.random", asname="jr")]),
             ast.Import(names=[ast.alias(name="equinox", asname="eqx")]),
         ]
 
@@ -235,11 +236,7 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
                     targets=[ast.Name(id="key", ctx=ast.Store())],
                     value=ast.Call(
                         func=ast.Attribute(
-                            value=ast.Attribute(
-                                value=ast.Name(id="jax", ctx=ast.Load()),
-                                attr="random",
-                                ctx=ast.Load(),
-                            ),
+                            value=ast.Name(id="jr", ctx=ast.Load()),
                             attr="PRNGKey",
                             ctx=ast.Load(),
                         ),
@@ -253,8 +250,34 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
         new_body.append(key_init)
 
         # Transform existing body
+        new_body_stmts: list[ast.stmt] = []
         for stmt in node.body:
-            new_body.append(self.visit(stmt))
+            new_body_stmts.append(self.visit(stmt))
+
+        # Add key splitting
+        key_split = ast.Assign(
+            targets=[
+                ast.Tuple(
+                    elts=[
+                        ast.Name(id=f"key_{i}", ctx=ast.Store()) for i in range(self.key_counter)
+                    ]
+                )
+            ],
+            value=ast.Call(
+                func=ast.Attribute(
+                    value=ast.Name(id="jr", ctx=ast.Load()),
+                    attr="split",
+                    ctx=ast.Load(),
+                ),
+                args=[
+                    ast.Name(id="key", ctx=ast.Load()),
+                    ast.Constant(value=self.key_counter),
+                ],
+                keywords=[],
+            )
+        )
+        new_body.append(key_split)
+        new_body.extend(new_body_stmts)
 
         node.body = new_body
         return node

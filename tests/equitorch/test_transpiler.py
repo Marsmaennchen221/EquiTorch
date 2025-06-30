@@ -73,10 +73,11 @@ class TestPyTorchToEquinoxTransformer:
         pytorch_code = "nn.Module"
         tree = transform_to_equinox_ast(pytorch_code)
         assert isinstance(tree, ast.Module)
-        assert len(tree.body) == 4  # noqa: PLR2004
+        assert len(tree.body) == 5  # noqa: PLR2004
         assert compare_ast(tree.body[0], ast.Import(names=[ast.alias(name="jax", asname=None)]))
         assert compare_ast(tree.body[1], ast.Import(names=[ast.alias(name="jax.numpy", asname="jnp")]))
-        assert compare_ast(tree.body[2], ast.Import(names=[ast.alias(name="equinox", asname="eqx")]))
+        assert compare_ast(tree.body[2], ast.Import(names=[ast.alias(name="jax.random", asname="jr")]))
+        assert compare_ast(tree.body[3], ast.Import(names=[ast.alias(name="equinox", asname="eqx")]))
 
     @pytest.mark.parametrize(
         "pytorch_code",
@@ -329,8 +330,76 @@ class TestPyTorchToEquinoxTransformer:
                 assert annotation.annotation.value.value.id == "eqx"
         assert num_annotations == len(current_class_params)
 
-    def test_transform_init_method(self):
-        pass  # TODO: test _transform_init_method
+    @pytest.mark.parametrize(
+        "code",
+        [
+            "import torch.nn as nn\nclass TestClass(nn.Module):\n\tdef __init__():pass",
+            "import torch.nn as nn\nclass TestClass(nn.Module):\n\tdef __init__(self, in_channels, num_classes):\n\t\tsuper(SimpleCNN, self).__init__()\n\t\tself.conv1 = nn.Conv2d(in_channels=in_channels, out_channels=16, kernel_size=3, stride=1, padding=1)\n\t\tself.conv2 = nn.Conv2d(in_channels=16, out_channels=32, kernel_size=3, stride=1, padding=1)\n\t\tself.fc = nn.Linear(32 * 7 * 7, num_classes)",
+        ],
+        ids=["empty init", "non-empty init"],
+    )
+    def test_transform_init_method(self, code: str) -> None:
+        tree = ast.parse(code)
+        num_stmts = len(tree.body[-1].body[-1].body)
+        transformer = PyTorchToEquinoxTransformer()
+        transformer.visit(tree)
+        num_keys = transformer.key_counter
+        assert isinstance(tree.body[-1], ast.ClassDef)
+        assert isinstance(tree.body[-1].body[-1], ast.FunctionDef)
+        assert tree.body[-1].body[-1].name == "__init__"
+        assert any(arg.arg == "key" for arg in tree.body[-1].body[-1].args.args)
+        assert tree.body[-1].body[-1].args.kwarg
+        assert tree.body[-1].body[-1].args.kwarg.arg == "kwargs"
+        assert len(tree.body[-1].body[-1].body) == 2 + num_stmts
+        # init key
+        assert isinstance(tree.body[-1].body[-1].body[0], ast.If)
+        assert isinstance(tree.body[-1].body[-1].body[0].test, ast.Compare)
+        assert isinstance(tree.body[-1].body[-1].body[0].test.left, ast.Name)
+        assert tree.body[-1].body[-1].body[0].test.left.id == "key"
+        assert isinstance(tree.body[-1].body[-1].body[0].test.left.ctx, ast.Load)
+        assert len(tree.body[-1].body[-1].body[0].test.ops) == 1
+        assert isinstance(tree.body[-1].body[-1].body[0].test.ops[0], ast.Is)
+        assert len(tree.body[-1].body[-1].body[0].test.comparators) == 1
+        assert isinstance(tree.body[-1].body[-1].body[0].test.comparators[0], ast.Constant)
+        assert tree.body[-1].body[-1].body[0].test.comparators[0].value is None
+        assert len(tree.body[-1].body[-1].body[0].body) == 1
+        assert isinstance(tree.body[-1].body[-1].body[0].body[0], ast.Assign)
+        assert len(tree.body[-1].body[-1].body[0].body[0].targets) == 1
+        assert isinstance(tree.body[-1].body[-1].body[0].body[0].targets[0], ast.Name)
+        assert tree.body[-1].body[-1].body[0].body[0].targets[0].id == "key"
+        assert isinstance(tree.body[-1].body[-1].body[0].body[0].targets[0].ctx, ast.Store)
+        assert isinstance(tree.body[-1].body[-1].body[0].body[0].value, ast.Call)
+        assert isinstance(tree.body[-1].body[-1].body[0].body[0].value.func, ast.Attribute)
+        assert isinstance(tree.body[-1].body[-1].body[0].body[0].value.func.value, ast.Name)
+        assert tree.body[-1].body[-1].body[0].body[0].value.func.value.id == "jr"
+        assert isinstance(tree.body[-1].body[-1].body[0].body[0].value.func.value.ctx, ast.Load)
+        assert tree.body[-1].body[-1].body[0].body[0].value.func.attr == "PRNGKey"
+        assert isinstance(tree.body[-1].body[-1].body[0].body[0].value.func.ctx, ast.Load)
+        assert len(tree.body[-1].body[-1].body[0].body[0].value.args) == 1
+        assert isinstance(tree.body[-1].body[-1].body[0].body[0].value.args[0], ast.Constant)
+        assert tree.body[-1].body[-1].body[0].body[0].value.args[0].value == 0
+        # split key
+        assert isinstance(tree.body[-1].body[-1].body[1], ast.Assign)
+        assert len(tree.body[-1].body[-1].body[1].targets) == 1
+        assert isinstance(tree.body[-1].body[-1].body[1].targets[0], ast.Tuple)
+        assert len(tree.body[-1].body[-1].body[1].targets[0].elts) == num_keys
+        for n in range(num_keys):
+            assert isinstance(tree.body[-1].body[-1].body[1].targets[0].elts[n], ast.Name)
+            assert tree.body[-1].body[-1].body[1].targets[0].elts[n].id == f"key_{n}"
+            assert isinstance(tree.body[-1].body[-1].body[1].targets[0].elts[n].ctx, ast.Store)
+        assert isinstance(tree.body[-1].body[-1].body[1].value, ast.Call)
+        assert isinstance(tree.body[-1].body[-1].body[1].value.func, ast.Attribute)
+        assert isinstance(tree.body[-1].body[-1].body[1].value.func.value, ast.Name)
+        assert tree.body[-1].body[-1].body[1].value.func.value.id == "jr"
+        assert isinstance(tree.body[-1].body[-1].body[1].value.func.value.ctx, ast.Load)
+        assert tree.body[-1].body[-1].body[1].value.func.attr == "split"
+        assert isinstance(tree.body[-1].body[-1].body[1].value.func.ctx, ast.Load)
+        assert len(tree.body[-1].body[-1].body[1].value.args) == 2
+        assert isinstance(tree.body[-1].body[-1].body[1].value.args[0], ast.Name)
+        assert tree.body[-1].body[-1].body[1].value.args[0].id == "key"
+        assert isinstance(tree.body[-1].body[-1].body[1].value.args[0].ctx, ast.Load)
+        assert isinstance(tree.body[-1].body[-1].body[1].value.args[1], ast.Constant)
+        assert tree.body[-1].body[-1].body[1].value.args[1].value == num_keys
 
     def test_transform_forward_method(self):
         new_tree = transform_to_equinox_ast("def forward(self, x):\n\treturn x")
@@ -423,7 +492,7 @@ class TestPyTorchToEquinoxTransformer:
         assert len(tree.body[-1].targets) == 1
         assert isinstance(tree.body[-1].targets[0], ast.Name)
         assert tree.body[-1].targets[0].id == target_name
-        assert tree.body[-1].targets[0].ctx.__class__.__name__ == ast.Store().__class__.__name__
+        assert isinstance(tree.body[-1].targets[0].ctx, ast.Store)
         assert isinstance(tree.body[-1].value, ast.Call)
         assert isinstance(tree.body[-1].value.func, ast.Call)
         assert isinstance(tree.body[-1].value.func.func, ast.Attribute)
