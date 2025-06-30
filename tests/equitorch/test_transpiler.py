@@ -405,8 +405,8 @@ class TestPyTorchToEquinoxTransformer:
 
     def test_transform_forward_method(self) -> None:
         new_tree = transform_to_equinox_ast("def forward(self, x):\n\treturn x")
-        assert isinstance(new_tree.body[-1], ast.FunctionDef)
-        assert new_tree.body[-1].name == "__call__"
+        assert isinstance(new_tree.body[-1], ast.FunctionDef)  # type: ignore[attr-defined]
+        assert new_tree.body[-1].name == "__call__"  # type: ignore[attr-defined]
 
     def test_is_self_module_call(self) -> None:
         self_module_call = ast.parse("self.forward(x)")
