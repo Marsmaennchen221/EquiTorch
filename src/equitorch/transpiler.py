@@ -260,8 +260,8 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
                 ast.Tuple(
                     elts=[
                         ast.Name(id=f"key_{i}", ctx=ast.Store()) for i in range(self.key_counter)
-                    ]
-                )
+                    ],
+                ),
             ],
             value=ast.Call(
                 func=ast.Attribute(
@@ -274,7 +274,7 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
                     ast.Constant(value=self.key_counter),
                 ],
                 keywords=[],
-            )
+            ),
         )
         new_body.append(key_split)
         new_body.extend(new_body_stmts)
@@ -354,7 +354,9 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
         func_name = node.func.attr  # type: ignore[attr-defined]
 
         # Use the modular functional converter
-        from equitorch.converters import transform_functional_call  # import inside this function so that mock test works
+        from equitorch.converters import (
+            transform_functional_call,  # import inside this function so that mock test works
+        )
         return transform_functional_call(node, module_name, func_name)
 
     @staticmethod
@@ -362,7 +364,9 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
         """Transform x.method() calls using modular converters."""
         method_name = get_method_name(node)
         if method_name:
-            from equitorch.converters import transform_method_call  # import inside this function so that mock test works
+            from equitorch.converters import (
+                transform_method_call,  # import inside this function so that mock test works
+            )
             return transform_method_call(node, method_name)
         return node
 
