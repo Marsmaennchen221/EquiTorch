@@ -126,11 +126,12 @@ class TestPyTorchToEquinoxTransformer:
         ("pytorch_code", "init_method", "forward_method"),
         [
             ("import torch.nn as nn\nclass TestClass(nn.Module):pass", False, False),
+            ("import torch.nn as nn\nclass TestClass(nn.Module):\n\tdef test():pass", False, False),
             ("import torch.nn as nn\nclass TestClass(nn.Module):\n\tdef __init__():pass", True, False),
             ("import torch.nn as nn\nclass TestClass(nn.Module):\n\tdef forward():pass", False, True),
             ("import torch.nn as nn\nclass TestClass(nn.Module):\n\tdef __init__():pass\n\tdef forward():pass", True, True),
         ],
-        ids=["no-method", "init", "forward", "init and forward"],
+        ids=["no-method", "other method", "init", "forward", "init and forward"],
     )
     def test_visit_FunctionDef(self, pytorch_code: str, init_method: bool, forward_method: bool) -> None:  # noqa: N802 FBT001
         transformer = PyTorchToEquinoxTransformer()
@@ -278,11 +279,12 @@ class TestPyTorchToEquinoxTransformer:
             ("def __init__(self, in_channels, num_classes):\n\tsuper(SimpleCNN, self).__init__()\n\tself.conv1 = nn.Conv2d(in_channels=in_channels, out_channels=16, kernel_size=3, stride=1, padding=1)\n\tself.conv2 = nn.Conv2d(in_channels=16, out_channels=32, kernel_size=3, stride=1, padding=1)\n\tself.fc = nn.Linear(32 * 7 * 7, num_classes)", ["conv1", "conv2", "fc"]),
             ("def __init__(self, in_channels, num_classes):\n\tsuper(SimpleCNN, self).__init__()", []),
             ("def __init__(self, in_channels, num_classes):\n\tsuper(SimpleCNN, self).__init__()\n\tself.number = 40 + 2", []),
+            ("def __init__(self, in_channels, num_classes):\n\tsuper(SimpleCNN, self).__init__()\n\tself.number = add_numbers(40, 2)", []),
             ("def __init__(self, in_channels, num_classes):\n\tsuper(SimpleCNN, self).__init__()\n\tself.conv1 = nn.Conv2d(in_channels=in_channels, out_channels=16, kernel_size=3, stride=1, padding=1)\n\tself.conv2 = nn.Conv2d(in_channels=16, out_channels=32, kernel_size=3, stride=1, padding=1)\n\tself.fc = nn.Linear(32 * 7 * 7, num_classes)\n\tself.constant = 42", ["conv1", "conv2", "fc"]),
             ("def __init__(self, in_channels, num_classes):\n\tsuper(SimpleCNN, self).__init__()\n\tself.conv1 = nn.Conv2d(in_channels=in_channels, out_channels=16, kernel_size=3, stride=1, padding=1)\n\ta = 2 + 40\n\tself.conv2 = nn.Conv2d(in_channels=16, out_channels=32, kernel_size=3, stride=1, padding=1)\n\tself.fc = nn.Linear(32 * 7 * 7, num_classes)", ["conv1", "conv2", "fc"]),
             ("def __init__(self, in_channels, num_classes):\n\tsuper(SimpleCNN, self).__init__()\n\tself.conv1 = nn.Conv2d(in_channels=in_channels, out_channels=16, kernel_size=3, stride=1, padding=1)\n\tself.conv1 = nn.Conv3d(in_channels=16, out_channels=32, kernel_size=3, stride=1, padding=1)", ["conv1"]),
         ],
-        ids=["3 torch Assignments", "no Assignments", "no torch Assignments", "torch Assignments and non torch Assignments", "torch Assignments and non torch Assignments not to self", "multiple torch Assignments same name"],
+        ids=["3 torch Assignments", "no Assignments", "no torch Assignments", "no torch Assignments but Call", "torch Assignments and non torch Assignments", "torch Assignments and non torch Assignments not to self", "multiple torch Assignments same name"],
     )
     def test_extract_parameters(self, code: str, names: list[str]) -> None:
         tree = ast.parse(code)
@@ -461,8 +463,9 @@ class TestPyTorchToEquinoxTransformer:
             ("nn.Dropout(p=0.2)", True),
             ("nn.Sequential(nn.Conv2d(1,20,5))", False),
             ("ast.Load()", False),
+            ("add_numbers(40, 2)", False),
         ],
-        ids=["Linear", "Conv1d", "Conv2d", "Conv3d", "BatchNorm1d", "BatchNorm2d", "BatchNorm3d", "Dropout", "not supported Sequential", "not a pytorch module"],
+        ids=["Linear", "Conv1d", "Conv2d", "Conv3d", "BatchNorm1d", "BatchNorm2d", "BatchNorm3d", "Dropout", "not supported Sequential", "not a pytorch module", "not an attribute"],
     )
     def test_is_pytorch_module_init(self, code: str, pytorch_module_init: bool) -> None:  # noqa: FBT001
         tree = ast.parse(code)
@@ -548,6 +551,12 @@ class TestPyTorchToEquinoxTransformer:
             transformer.visit(tree)
             transform_method_call.assert_called_once_with(call, method_name)
 
+    def test_transform_method_call_no_method_name(self) -> None:
+        tree = ast.parse("add_numbers(40, 2)")
+        with patch.object(converters, "transform_method_call") as transform_method_call:
+            PyTorchToEquinoxTransformer._transform_method_call(tree.body[0].value)
+            transform_method_call.assert_not_called()
+
     @pytest.mark.parametrize(
         ("code", "num_of_modules"),
         [
@@ -567,6 +576,13 @@ class TestPyTorchToEquinoxTransformer:
             assert tree.body[-num_of_modules+module_index].value.keywords[-1].arg == "key"  # type: ignore[attr-defined]
             assert isinstance(tree.body[-num_of_modules+module_index].value.keywords[-1].value, ast.Name)  # type: ignore[attr-defined]
             assert tree.body[-num_of_modules+module_index].value.keywords[-1].value.id == f"key_{module_index}"  # type: ignore[attr-defined]
+
+    def test_transform_module_init_not_supported(self) -> None:
+        tree = ast.parse("import torch.nn as nn\nnn.Module()")
+        PyTorchToEquinoxTransformer()._transform_module_init(tree.body[-1].value)
+        assert isinstance(tree.body[-1], ast.Expr)
+        assert isinstance(tree.body[-1].value, ast.Call)  # type: ignore[attr-defined]
+        assert len(tree.body[-1].value.keywords) == 0  # type: ignore[attr-defined]
 
     def test_transform_module_init_reset_key_counter(self) -> None:
         code = ("import torch.nn as nn\n"
