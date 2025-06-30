@@ -338,9 +338,9 @@ class TestPyTorchToEquinoxTransformer:
         ],
         ids=["empty init", "non-empty init"],
     )
-    def test_transform_init_method(self, code: str) -> None:
+    def test_transform_init_method(self, code: str) -> None:  # noqa: PLR0915
         tree = ast.parse(code)
-        num_stmts = len(tree.body[-1].body[-1].body)
+        num_stmts = len(tree.body[-1].body[-1].body)  # type: ignore[attr-defined]
         transformer = PyTorchToEquinoxTransformer()
         transformer.visit(tree)
         num_keys = transformer.key_counter
@@ -351,6 +351,7 @@ class TestPyTorchToEquinoxTransformer:
         assert tree.body[-1].body[-1].args.kwarg
         assert tree.body[-1].body[-1].args.kwarg.arg == "kwargs"
         assert len(tree.body[-1].body[-1].body) == 2 + num_stmts
+
         # init key
         assert isinstance(tree.body[-1].body[-1].body[0], ast.If)
         assert isinstance(tree.body[-1].body[-1].body[0].test, ast.Compare)
@@ -378,6 +379,7 @@ class TestPyTorchToEquinoxTransformer:
         assert len(tree.body[-1].body[-1].body[0].body[0].value.args) == 1
         assert isinstance(tree.body[-1].body[-1].body[0].body[0].value.args[0], ast.Constant)
         assert tree.body[-1].body[-1].body[0].body[0].value.args[0].value == 0
+
         # split key
         assert isinstance(tree.body[-1].body[-1].body[1], ast.Assign)
         assert len(tree.body[-1].body[-1].body[1].targets) == 1
@@ -385,8 +387,8 @@ class TestPyTorchToEquinoxTransformer:
         assert len(tree.body[-1].body[-1].body[1].targets[0].elts) == num_keys
         for n in range(num_keys):
             assert isinstance(tree.body[-1].body[-1].body[1].targets[0].elts[n], ast.Name)
-            assert tree.body[-1].body[-1].body[1].targets[0].elts[n].id == f"key_{n}"
-            assert isinstance(tree.body[-1].body[-1].body[1].targets[0].elts[n].ctx, ast.Store)
+            assert tree.body[-1].body[-1].body[1].targets[0].elts[n].id == f"key_{n}"  # type: ignore[attr-defined]
+            assert isinstance(tree.body[-1].body[-1].body[1].targets[0].elts[n].ctx, ast.Store)  # type: ignore[attr-defined]
         assert isinstance(tree.body[-1].body[-1].body[1].value, ast.Call)
         assert isinstance(tree.body[-1].body[-1].body[1].value.func, ast.Attribute)
         assert isinstance(tree.body[-1].body[-1].body[1].value.func.value, ast.Name)
@@ -394,19 +396,19 @@ class TestPyTorchToEquinoxTransformer:
         assert isinstance(tree.body[-1].body[-1].body[1].value.func.value.ctx, ast.Load)
         assert tree.body[-1].body[-1].body[1].value.func.attr == "split"
         assert isinstance(tree.body[-1].body[-1].body[1].value.func.ctx, ast.Load)
-        assert len(tree.body[-1].body[-1].body[1].value.args) == 2
+        assert len(tree.body[-1].body[-1].body[1].value.args) == 2  # noqa: PLR2004
         assert isinstance(tree.body[-1].body[-1].body[1].value.args[0], ast.Name)
         assert tree.body[-1].body[-1].body[1].value.args[0].id == "key"
         assert isinstance(tree.body[-1].body[-1].body[1].value.args[0].ctx, ast.Load)
         assert isinstance(tree.body[-1].body[-1].body[1].value.args[1], ast.Constant)
         assert tree.body[-1].body[-1].body[1].value.args[1].value == num_keys
 
-    def test_transform_forward_method(self):
+    def test_transform_forward_method(self) -> None:
         new_tree = transform_to_equinox_ast("def forward(self, x):\n\treturn x")
         assert isinstance(new_tree.body[-1], ast.FunctionDef)
         assert new_tree.body[-1].name == "__call__"
 
-    def test_is_self_module_call(self):
+    def test_is_self_module_call(self) -> None:
         self_module_call = ast.parse("self.forward(x)")
         non_self_module_call = ast.parse("a.forward(x)")
         assert isinstance(self_module_call.body[0], ast.Expr)
@@ -434,7 +436,7 @@ class TestPyTorchToEquinoxTransformer:
         ],
         ids=["torch.nn.functional as F", "torch.nn.functional", "wrong as W", "torch as T", "torch", "wrong", "torch.nn as N functional", "torch as T functional", "torch functional", "torch torch.W.functional", "torch torch.nn.W functional", "torch.nn as N wrong functional" ],
     )
-    def test_is_functional_call(self, import_code: str, code: str, is_functional_call: bool):  # noqa: FBT001
+    def test_is_functional_call(self, import_code: str, code: str, is_functional_call: bool) -> None:  # noqa: FBT001
         tree = ast.parse(code)
         import_tree = ast.parse(import_code)
         transformer = PyTorchToEquinoxTransformer()
@@ -480,11 +482,11 @@ class TestPyTorchToEquinoxTransformer:
     )
     def test_transform_module_call(self, code: str) -> None:
         tree = ast.parse(code)
-        target_name = tree.body[-1].targets[0].id
-        module_function_name = tree.body[-1].value.func.attr
-        module_function_variable_num = len(tree.body[-1].value.args)
+        target_name = tree.body[-1].targets[0].id  # type: ignore[attr-defined]
+        module_function_name = tree.body[-1].value.func.attr  # type: ignore[attr-defined]
+        module_function_variable_num = len(tree.body[-1].value.args)  # type: ignore[attr-defined]
         module_function_args = []
-        for arg in tree.body[-1].value.args:
+        for arg in tree.body[-1].value.args:  # type: ignore[attr-defined]
             module_function_args.append((type(arg), arg.id))
         transformer = PyTorchToEquinoxTransformer()
         transformer.visit(tree)
@@ -520,7 +522,7 @@ class TestPyTorchToEquinoxTransformer:
     def test_transform_functional_call(self, code: str, module_name: str, function_name: str) -> None:
         tree = ast.parse(code)
         transformer = PyTorchToEquinoxTransformer()
-        call = tree.body[-1].value
+        call = tree.body[-1].value  # type: ignore[attr-defined]
         while isinstance(call.func, ast.Attribute) and isinstance(call.func.value, ast.Call):
             call = call.func.value
 
@@ -540,7 +542,7 @@ class TestPyTorchToEquinoxTransformer:
     def test_transform_method_call(self, code: str, method_name: str) -> None:
         tree = ast.parse(code)
         transformer = PyTorchToEquinoxTransformer()
-        call = tree.body[-1].value
+        call = tree.body[-1].value  # type: ignore[attr-defined]
 
         with patch.object(converters, "transform_method_call") as transform_method_call:
             transformer.visit(tree)
@@ -561,10 +563,10 @@ class TestPyTorchToEquinoxTransformer:
         assert not isinstance(tree.body[-num_of_modules-1], ast.Expr)  # No more modules than expected
         for module_index in range(num_of_modules):
             assert isinstance(tree.body[-num_of_modules+module_index], ast.Expr)
-            assert isinstance(tree.body[-num_of_modules+module_index].value, ast.Call)
-            assert tree.body[-num_of_modules+module_index].value.keywords[-1].arg == "key"
-            assert isinstance(tree.body[-num_of_modules+module_index].value.keywords[-1].value, ast.Name)
-            assert tree.body[-num_of_modules+module_index].value.keywords[-1].value.id == f"key_{module_index}"
+            assert isinstance(tree.body[-num_of_modules+module_index].value, ast.Call)  # type: ignore[attr-defined]
+            assert tree.body[-num_of_modules+module_index].value.keywords[-1].arg == "key"  # type: ignore[attr-defined]
+            assert isinstance(tree.body[-num_of_modules+module_index].value.keywords[-1].value, ast.Name)  # type: ignore[attr-defined]
+            assert tree.body[-num_of_modules+module_index].value.keywords[-1].value.id == f"key_{module_index}"  # type: ignore[attr-defined]
 
     def test_transform_module_init_reset_key_counter(self) -> None:
         code = ("import torch.nn as nn\n"
@@ -579,17 +581,17 @@ class TestPyTorchToEquinoxTransformer:
         assert not isinstance(tree.body[-4], ast.Expr)  # No more modules than expected
         for key_index, node_index in enumerate([-3, -2]):
             assert isinstance(tree.body[node_index], ast.Expr)
-            assert isinstance(tree.body[node_index].value, ast.Call)
-            assert tree.body[node_index].value.keywords[-1].arg == "key"
-            assert isinstance(tree.body[node_index].value.keywords[-1].value, ast.Name)
-            assert tree.body[node_index].value.keywords[-1].value.id == f"key_{key_index}"
+            assert isinstance(tree.body[node_index].value, ast.Call)  # type: ignore[attr-defined]
+            assert tree.body[node_index].value.keywords[-1].arg == "key"  # type: ignore[attr-defined]
+            assert isinstance(tree.body[node_index].value.keywords[-1].value, ast.Name)  # type: ignore[attr-defined]
+            assert tree.body[node_index].value.keywords[-1].value.id == f"key_{key_index}"  # type: ignore[attr-defined]
         assert isinstance(tree.body[-1], ast.ClassDef)  # ClassDef should reset key counter
         for key_index, node_index in enumerate([-2, -1]):
             assert isinstance(tree.body[-1].body[node_index], ast.Expr)
-            assert isinstance(tree.body[-1].body[node_index].value, ast.Call)
-            assert tree.body[-1].body[node_index].value.keywords[-1].arg == "key"
-            assert isinstance(tree.body[-1].body[node_index].value.keywords[-1].value, ast.Name)
-            assert tree.body[-1].body[node_index].value.keywords[-1].value.id == f"key_{key_index}"
+            assert isinstance(tree.body[-1].body[node_index].value, ast.Call)  # type: ignore[attr-defined]
+            assert tree.body[-1].body[node_index].value.keywords[-1].arg == "key"  # type: ignore[attr-defined]
+            assert isinstance(tree.body[-1].body[node_index].value.keywords[-1].value, ast.Name)  # type: ignore[attr-defined]
+            assert tree.body[-1].body[node_index].value.keywords[-1].value.id == f"key_{key_index}"  # type: ignore[attr-defined]
 
 def test_mlp_transpilation(snapshot_equinox_code: SnapshotAssertion):
     """Test transpilation of a PyTorch MLP to Equinox."""
