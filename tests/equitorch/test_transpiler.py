@@ -554,7 +554,7 @@ class TestPyTorchToEquinoxTransformer:
     def test_transform_method_call_no_method_name(self) -> None:
         tree = ast.parse("add_numbers(40, 2)")
         with patch.object(converters, "transform_method_call") as transform_method_call:
-            PyTorchToEquinoxTransformer._transform_method_call(tree.body[0].value)
+            PyTorchToEquinoxTransformer._transform_method_call(tree.body[0].value)  # type: ignore[attr-defined]
             transform_method_call.assert_not_called()
 
     @pytest.mark.parametrize(
@@ -579,7 +579,7 @@ class TestPyTorchToEquinoxTransformer:
 
     def test_transform_module_init_not_supported(self) -> None:
         tree = ast.parse("import torch.nn as nn\nnn.Module()")
-        PyTorchToEquinoxTransformer()._transform_module_init(tree.body[-1].value)
+        PyTorchToEquinoxTransformer()._transform_module_init(tree.body[-1].value)  # type: ignore[attr-defined]
         assert isinstance(tree.body[-1], ast.Expr)
         assert isinstance(tree.body[-1].value, ast.Call)  # type: ignore[attr-defined]
         assert len(tree.body[-1].value.keywords) == 0  # type: ignore[attr-defined]
