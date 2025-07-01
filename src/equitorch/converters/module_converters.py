@@ -64,6 +64,78 @@ class ElmanRNNCell(eqx.Module):
 '''
 
 
+def _create_multihead_attention_converter() -> Callable[[ast.Call, int], tuple[ast.Call, ast.AST]]:
+    """Create a custom converter for MultiheadAttention that maps PyTorch to Equinox parameters."""
+    def converter(node: ast.Call, key_counter: int) -> tuple[ast.Call, ast.AST]:
+        # Extract arguments and keywords from PyTorch call
+        args = list(node.args)
+        keywords = list(node.keywords)
+        
+        # Map PyTorch parameters to Equinox parameters
+        new_keywords = []
+        
+        # Handle positional arguments
+        if len(args) >= 1:
+            # First arg: embed_dim -> query_size
+            new_keywords.append(ast.keyword(arg="query_size", value=args[0]))
+        if len(args) >= 2:
+            # Second arg: num_heads -> num_heads (same name)
+            new_keywords.append(ast.keyword(arg="num_heads", value=args[1]))
+        
+        # Handle keyword arguments
+        for kw in keywords:
+            if kw.arg == "embed_dim":
+                new_keywords.append(ast.keyword(arg="query_size", value=kw.value))
+            elif kw.arg == "num_heads":
+                new_keywords.append(ast.keyword(arg="num_heads", value=kw.value))
+            elif kw.arg == "dropout":
+                # Only add dropout_p if dropout is explicitly specified and > 0
+                new_keywords.append(ast.keyword(arg="dropout_p", value=kw.value))
+            elif kw.arg == "bias":
+                # PyTorch bias -> Equinox use_*_bias
+                new_keywords.extend([
+                    ast.keyword(arg="use_query_bias", value=kw.value),
+                    ast.keyword(arg="use_key_bias", value=kw.value),
+                    ast.keyword(arg="use_value_bias", value=kw.value),
+                    ast.keyword(arg="use_output_bias", value=kw.value),
+                ])
+            # Skip PyTorch-specific parameters that don't exist in Equinox
+            elif kw.arg not in {"batch_first", "device", "dtype", "add_bias_kv", "add_zero_attn", "kdim", "vdim"}:
+                new_keywords.append(kw)
+        
+        # Add key parameter
+        new_keywords.append(ast.keyword(arg="key", value=ast.Name(id="subkey", ctx=ast.Load())))
+        
+        # Create the Equinox MultiheadAttention call
+        transformed_node = ast.Call(
+            func=ast.Attribute(
+                value=ast.Attribute(
+                    value=ast.Name(id="eqx", ctx=ast.Load()),
+                    attr="nn",
+                    ctx=ast.Load()
+                ),
+                attr="MultiheadAttention",
+                ctx=ast.Load()
+            ),
+            args=[],  # Use only keyword arguments for clarity
+            keywords=new_keywords
+        )
+        
+        type_annotation = ast.Attribute(
+            value=ast.Attribute(
+                value=ast.Name(id="eqx", ctx=ast.Load()),
+                attr="nn",
+                ctx=ast.Load()
+            ),
+            attr="MultiheadAttention",
+            ctx=ast.Load()
+        )
+        
+        return transformed_node, type_annotation
+    
+    return converter
+
+
 # Single unified mapping replacing all previous mapping dictionaries
 MODULE_CONFIGS: dict[str, ModuleConfig] = {
     "Linear": ModuleConfig(
@@ -96,6 +168,11 @@ MODULE_CONFIGS: dict[str, ModuleConfig] = {
         parameter_filters={"batch_first", "dropout", "bidirectional", "num_layers"},
         args_slice=slice(0, 2)
     ),
+    "MultiheadAttention": ModuleConfig(
+        target_module="eqx.nn.MultiheadAttention",
+        parameter_filters={"device", "dtype", "add_bias_kv", "add_zero_attn", "kdim", "vdim"},
+        default_parameters={"use_bias": True}
+    ),
     "Parameter": ModuleConfig(target_module="jnp.ndarray"),
 }
 
@@ -120,10 +197,49 @@ def _create_generic_converter(config: ModuleConfig) -> Callable[[ast.Call, int],
     def converter(node: ast.Call, key_counter: int) -> tuple[ast.Call, ast.AST]:
         # Handle special case for Parameter
         if config.target_module == "jnp.ndarray":
-            if node.args:
-                transformed_node = node.args[0]  # Extract inner tensor creation
+            if node.args and len(node.args) > 0:
+                inner_call = node.args[0]  # Extract inner tensor creation (e.g., torch.randn(...))
+                
+                # Check if this is a torch.randn call that needs conversion
+                if (isinstance(inner_call, ast.Call) and 
+                    isinstance(inner_call.func, ast.Attribute) and
+                    isinstance(inner_call.func.value, ast.Name) and
+                    inner_call.func.value.id == "torch" and
+                    inner_call.func.attr == "randn"):
+                    
+                    # Convert torch.randn(shape_args...) to jax.random.normal(key, (shape_args...))
+                    # Create the shape tuple from the original arguments
+                    if len(inner_call.args) == 1:
+                        # Single argument - use as-is
+                        shape_arg = inner_call.args[0]
+                    else:
+                        # Multiple arguments - wrap in tuple
+                        shape_arg = ast.Tuple(elts=inner_call.args, ctx=ast.Load())
+                    
+                    # Create jax.random.normal(subkey, shape)
+                    transformed_node = ast.Call(
+                        func=ast.Attribute(
+                            value=ast.Attribute(
+                                value=ast.Name(id="jax", ctx=ast.Load()),
+                                attr="random",
+                                ctx=ast.Load()
+                            ),
+                            attr="normal",
+                            ctx=ast.Load()
+                        ),
+                        args=[
+                            ast.Name(id="subkey", ctx=ast.Load()),  # key first
+                            shape_arg  # shape second
+                        ],
+                        keywords=[]
+                    )
+                else:
+                    # For other inner calls, just extract them
+                    transformed_node = inner_call
             else:
+                # No arguments, use the node as-is
                 transformed_node = node
+                
             type_annotation = ast.Attribute(
                 value=ast.Name(id="jnp", ctx=ast.Load()),
                 attr="ndarray",
@@ -294,6 +410,10 @@ def get_module_converter(module_name: str) -> Callable[[ast.Call, int], tuple[as
     Raises:
         KeyError: If no converter exists and auto-transpilation fails
     """
+    # Special case for MultiheadAttention - use custom converter
+    if module_name == "MultiheadAttention":
+        return _create_multihead_attention_converter()
+    
     # Try configured converter first
     if module_name in MODULE_CONFIGS:
         config = MODULE_CONFIGS[module_name]

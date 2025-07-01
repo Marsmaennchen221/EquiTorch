@@ -423,17 +423,31 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
         if module_type is None:
             return False
         
-        # Modules that handle batches natively in Equinox
-        # Actually, in Equinox, ALL layers operate on single examples, and batching
+        # In Equinox, ALL modules operate on single examples, and batching
         # is handled with vmap at the top level (not inside the model)
-        # So we should NOT use vmap for any layers inside the model
+        # So we should NOT use vmap for any modules inside the model
+        
+        # Built-in PyTorch modules that are converted to Equinox
         BATCH_NATIVE_MODULES = {
             "Linear", "Conv1d", "Conv2d", "Conv3d", "ConvTranspose1d", 
             "ConvTranspose2d", "ConvTranspose3d", "BatchNorm1d", "BatchNorm2d", 
-            "BatchNorm3d", "LayerNorm", "GroupNorm", "Dropout", "Embedding"
+            "BatchNorm3d", "LayerNorm", "GroupNorm", "Dropout", "Embedding",
+            "MultiheadAttention"  # MultiheadAttention handles batches natively
         }
         
-        return module_type in BATCH_NATIVE_MODULES
+        # Check if it's a built-in PyTorch module
+        if module_type in BATCH_NATIVE_MODULES:
+            return True
+        
+        # Check if it's a custom class (not a built-in PyTorch module)
+        # Custom classes are also designed to work on single examples in Equinox
+        # If the module_type is not in our known PyTorch modules, it's likely a custom class
+        from .converters.module_converters import MODULE_CONFIGS
+        if module_type not in MODULE_CONFIGS:
+            # This is a custom class, treat it as batch-native (no vmap needed)
+            return True
+        
+        return False
     
     def _get_rnn_type(self, module_name: str) -> str:
         """Get the RNN type for a given module name."""
@@ -692,12 +706,14 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
                 transformed_node, type_annotation = result
                 # Store the type annotation for this parameter
                 self._store_type_annotation(node, type_annotation)
-                # Add key parameter to the transformed node
-                self._add_key_to_call(transformed_node)
+                # Don't add key parameter for Parameter - it's handled by functional converter
+                if module_type != "Parameter":
+                    self._add_key_to_call(transformed_node)
                 return transformed_node
             else:
-                # Old interface - add key parameter
-                self._add_key_to_call(result)
+                # Old interface - add key parameter (except for Parameter)
+                if module_type != "Parameter":
+                    self._add_key_to_call(result)
                 return result
         return node
     

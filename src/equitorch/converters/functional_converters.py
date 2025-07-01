@@ -16,7 +16,6 @@ FUNCTIONAL_MAPPINGS: dict[tuple[str, str], tuple[str, str]] = {
     ("torch", "tanh"): ("jnp", "tanh"),
     ("torch", "matmul"): ("jnp", "matmul"),
     ("torch", "sum"): ("jnp", "sum"),
-    ("torch", "randn"): ("jax.random", "normal"),
 }
 
 # Complex transformations requiring custom logic
@@ -31,6 +30,7 @@ CUSTOM_FUNCTIONAL_TRANSFORMERS: dict[tuple[str, str], callable] = {
     ("F", "max_pool3d"): lambda node: transform_max_pool(node, "jax.nn", "max_pool", "max_pool3d"),
     ("torch", "flatten"): lambda node: transform_torch_flatten(node),
     ("torch", "zeros"): lambda node: transform_torch_zeros(node),
+    ("torch", "randn"): lambda node: transform_torch_randn(node),
 }
 
 
@@ -210,6 +210,45 @@ def transform_torch_zeros(node: ast.Call) -> ast.Call:
         ),
         args=[shape_tuple],
         keywords=node.keywords,
+    )
+
+
+def transform_torch_randn(node: ast.Call) -> ast.Call:
+    """Transform torch.randn to jax.random.normal with proper argument order.
+    
+    PyTorch: torch.randn(shape_args...)
+    JAX: jax.random.normal(key, (shape_args...))
+    
+    Args:
+        node: The AST Call node for torch.randn
+        
+    Returns:
+        Transformed AST Call node for jax.random.normal
+    """
+    # Create the shape tuple from the original arguments
+    if len(node.args) == 1:
+        # Single argument - use as-is
+        shape_arg = node.args[0]
+    else:
+        # Multiple arguments - wrap in tuple
+        shape_arg = ast.Tuple(elts=list(node.args), ctx=ast.Load())
+    
+    # Create jax.random.normal(subkey, shape)
+    return ast.Call(
+        func=ast.Attribute(
+            value=ast.Attribute(
+                value=ast.Name(id="jax", ctx=ast.Load()),
+                attr="random",
+                ctx=ast.Load()
+            ),
+            attr="normal",
+            ctx=ast.Load()
+        ),
+        args=[
+            ast.Name(id="subkey", ctx=ast.Load()),  # key first
+            shape_arg  # shape second
+        ],
+        keywords=[]
     )
 
 

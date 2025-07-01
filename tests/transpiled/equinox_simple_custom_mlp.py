@@ -9,13 +9,11 @@ class CustomLinear(eqx.Module):
     def __init__(self, in_features, out_features, bias=True, key=None, **kwargs):
         if key is None:
             key = jax.random.PRNGKey(0)
-        self.in_features = in_features
-        self.out_features = out_features
         key, subkey = jax.random.split(key)
-        self.weight = jax.random.normal(out_features, in_features, key=subkey)
+        self.weight = jax.random.normal(subkey, (out_features, in_features))
         if bias:
             key, subkey = jax.random.split(key)
-            self.bias = jax.random.normal(out_features, key=subkey)
+            self.bias = jax.random.normal(subkey, out_features)
         else:
             self.bias = None
 
@@ -38,6 +36,6 @@ class SimpleMLP(eqx.Module):
 
     def __call__(self, x):
         """Forward pass through the MLP."""
-        x = jax.nn.relu(jax.vmap(self.layer1)(x))
-        x = jax.vmap(self.layer2)(x)
+        x = jax.nn.relu(self.layer1(x))
+        x = self.layer2(x)
         return x
