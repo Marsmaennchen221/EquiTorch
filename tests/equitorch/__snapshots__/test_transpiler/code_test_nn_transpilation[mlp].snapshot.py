@@ -1,5 +1,6 @@
 import jax
 import jax.numpy as jnp
+import jax.random as jr
 import equinox as eqx
 import torch.nn as nn
 import torch.nn.functional as F
@@ -10,7 +11,8 @@ class MLP(eqx.Module):
 
     def __init__(self, input_size, hidden_size, output_size, key=None, **kwargs):
         if key is None:
-            key = jax.random.PRNGKey(0)
+            key = jr.PRNGKey(0)
+        key_0, key_1 = jr.split(key, 2)
         super(MLP, self).__init__()
         self.fc1 = eqx.nn.Linear(input_size, hidden_size, use_bias=True, key=key_0)
         self.fc2 = eqx.nn.Linear(hidden_size, output_size, use_bias=True, key=key_1)

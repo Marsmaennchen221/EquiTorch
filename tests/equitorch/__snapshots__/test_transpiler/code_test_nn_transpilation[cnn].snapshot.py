@@ -1,5 +1,6 @@
 import jax
 import jax.numpy as jnp
+import jax.random as jr
 import equinox as eqx
 import torch.nn as nn
 import torch.nn.functional as F
@@ -11,7 +12,8 @@ class SimpleCNN(eqx.Module):
 
     def __init__(self, in_channels, num_classes, key=None, **kwargs):
         if key is None:
-            key = jax.random.PRNGKey(0)
+            key = jr.PRNGKey(0)
+        key_0, key_1, key_2 = jr.split(key, 3)
         super(SimpleCNN, self).__init__()
         self.conv1 = eqx.nn.Conv2d(in_channels=in_channels, out_channels=16, kernel_size=3, stride=1, padding=1, use_bias=True, key=key_0)
         self.conv2 = eqx.nn.Conv2d(in_channels=16, out_channels=32, kernel_size=3, stride=1, padding=1, use_bias=True, key=key_1)
