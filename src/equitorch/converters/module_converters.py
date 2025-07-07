@@ -2,6 +2,8 @@
 
 This module contains both the mappings and implementations for converting
 PyTorch nn.Module instances to their Equinox equivalents.
+
+Refactored to follow the same modular architecture as functional_converters and method_converters.
 """
 
 import ast
@@ -19,15 +21,77 @@ else:
         nn = None
 
 
-@dataclass
-class ModuleConfig:
-    """Configuration for module conversion."""
-    target_module: str  # e.g., "eqx.nn.Linear", "ElmanRNNCell"
-    custom_definition: Optional[str] = None  # For custom implementations
-    parameter_filters: Optional[set[str]] = None  # Parameters to exclude
-    default_parameters: Optional[dict[str, Any]] = None  # Parameters to add
-    args_slice: Optional[slice] = None  # For modules that take subset of args
+# ============================================================================
+# SIMPLE MODULE MAPPINGS - Direct 1:1 conversions
+# ============================================================================
 
+SIMPLE_MODULE_MAPPINGS: dict[str, str] = {
+    "Linear": "eqx.nn.Linear",
+    "Conv1d": "eqx.nn.Conv1d",
+    "Conv2d": "eqx.nn.Conv2d",
+    "Conv3d": "eqx.nn.Conv3d",
+    "BatchNorm1d": "eqx.nn.BatchNorm1d",
+    "BatchNorm2d": "eqx.nn.BatchNorm2d",
+    "BatchNorm3d": "eqx.nn.BatchNorm3d",
+    "Dropout": "eqx.nn.Dropout",
+}
+
+
+# ============================================================================
+# SIMPLE MODULE CONFIGURATIONS - For modules needing basic parameter handling
+# ============================================================================
+
+@dataclass
+class SimpleModuleConfig:
+    """Configuration for simple module conversions."""
+    target_module: str
+    default_parameters: Optional[dict[str, Any]] = None
+    parameter_filters: Optional[set[str]] = None
+    args_slice: Optional[slice] = None
+
+
+SIMPLE_MODULE_CONFIGS: dict[str, SimpleModuleConfig] = {
+    "Linear": SimpleModuleConfig(
+        target_module="eqx.nn.Linear",
+        default_parameters={"use_bias": True}
+    ),
+    "Conv1d": SimpleModuleConfig(
+        target_module="eqx.nn.Conv1d",
+        default_parameters={"use_bias": True}
+    ),
+    "Conv2d": SimpleModuleConfig(
+        target_module="eqx.nn.Conv2d",
+        default_parameters={"use_bias": True}
+    ),
+    "Conv3d": SimpleModuleConfig(
+        target_module="eqx.nn.Conv3d",
+        default_parameters={"use_bias": True}
+    ),
+    "BatchNorm1d": SimpleModuleConfig(target_module="eqx.nn.BatchNorm1d"),
+    "BatchNorm2d": SimpleModuleConfig(target_module="eqx.nn.BatchNorm2d"),
+    "BatchNorm3d": SimpleModuleConfig(target_module="eqx.nn.BatchNorm3d"),
+    "Dropout": SimpleModuleConfig(target_module="eqx.nn.Dropout"),
+    "LSTM": SimpleModuleConfig(
+        target_module="eqx.nn.LSTMCell",
+        args_slice=slice(0, 2)  # Only take input_size, hidden_size
+    ),
+}
+
+
+# ============================================================================
+# COMPLEX MODULE TRANSFORMERS - For modules requiring custom logic
+# ============================================================================
+
+CUSTOM_MODULE_TRANSFORMERS: dict[str, Callable[[ast.Call, int], tuple[ast.Call, ast.AST]]] = {
+    "MultiheadAttention": lambda node, key_counter: transform_multihead_attention(node, key_counter),
+    "RNN": lambda node, key_counter: transform_rnn_module(node, key_counter),
+    "Parameter": lambda node, key_counter: transform_parameter(node, key_counter),
+}
+
+
+# ============================================================================
+# CUSTOM IMPLEMENTATIONS - Code that needs to be injected
+# ============================================================================
 
 def _get_elman_rnn_cell_definition() -> str:
     """Return the Elman RNN cell class definition to inject into transpiled code."""
@@ -64,64 +128,59 @@ class ElmanRNNCell(eqx.Module):
 '''
 
 
-def _create_multihead_attention_converter() -> Callable[[ast.Call, int], tuple[ast.Call, ast.AST]]:
-    """Create a custom converter for MultiheadAttention that maps PyTorch to Equinox parameters."""
-    def converter(node: ast.Call, key_counter: int) -> tuple[ast.Call, ast.AST]:
-        # Extract arguments and keywords from PyTorch call
-        args = list(node.args)
-        keywords = list(node.keywords)
-        
-        # Map PyTorch parameters to Equinox parameters
-        new_keywords = []
-        
-        # Handle positional arguments
-        if len(args) >= 1:
-            # First arg: embed_dim -> query_size
-            new_keywords.append(ast.keyword(arg="query_size", value=args[0]))
-        if len(args) >= 2:
-            # Second arg: num_heads -> num_heads (same name)
-            new_keywords.append(ast.keyword(arg="num_heads", value=args[1]))
-        
-        # Handle keyword arguments
-        for kw in keywords:
-            if kw.arg == "embed_dim":
-                new_keywords.append(ast.keyword(arg="query_size", value=kw.value))
-            elif kw.arg == "num_heads":
-                new_keywords.append(ast.keyword(arg="num_heads", value=kw.value))
-            elif kw.arg == "dropout":
-                # Only add dropout_p if dropout is explicitly specified and > 0
-                new_keywords.append(ast.keyword(arg="dropout_p", value=kw.value))
-            elif kw.arg == "bias":
-                # PyTorch bias -> Equinox use_*_bias
-                new_keywords.extend([
-                    ast.keyword(arg="use_query_bias", value=kw.value),
-                    ast.keyword(arg="use_key_bias", value=kw.value),
-                    ast.keyword(arg="use_value_bias", value=kw.value),
-                    ast.keyword(arg="use_output_bias", value=kw.value),
-                ])
-            # Skip PyTorch-specific parameters that don't exist in Equinox
-            elif kw.arg not in {"batch_first", "device", "dtype", "add_bias_kv", "add_zero_attn", "kdim", "vdim"}:
-                new_keywords.append(kw)
-        
-        # Add key parameter
-        new_keywords.append(ast.keyword(arg="key", value=ast.Name(id="subkey", ctx=ast.Load())))
-        
-        # Create the Equinox MultiheadAttention call
-        transformed_node = ast.Call(
-            func=ast.Attribute(
-                value=ast.Attribute(
-                    value=ast.Name(id="eqx", ctx=ast.Load()),
-                    attr="nn",
-                    ctx=ast.Load()
-                ),
-                attr="MultiheadAttention",
-                ctx=ast.Load()
-            ),
-            args=[],  # Use only keyword arguments for clarity
-            keywords=new_keywords
-        )
-        
-        type_annotation = ast.Attribute(
+CUSTOM_IMPLEMENTATIONS: dict[str, str] = {
+    "ElmanRNNCell": _get_elman_rnn_cell_definition(),
+}
+
+
+# ============================================================================
+# TRANSFORMATION FUNCTIONS - Individual transformers for complex modules
+# ============================================================================
+
+def transform_multihead_attention(node: ast.Call, key_counter: int) -> tuple[ast.Call, ast.AST]:
+    """Transform MultiheadAttention with proper parameter mapping from PyTorch to Equinox."""
+    # Extract arguments and keywords from PyTorch call
+    args = list(node.args)
+    keywords = list(node.keywords)
+    
+    # Map PyTorch parameters to Equinox parameters
+    new_keywords = []
+    
+    # Handle positional arguments
+    if len(args) >= 1:
+        # First arg: embed_dim -> query_size
+        new_keywords.append(ast.keyword(arg="query_size", value=args[0]))
+    if len(args) >= 2:
+        # Second arg: num_heads -> num_heads (same name)
+        new_keywords.append(ast.keyword(arg="num_heads", value=args[1]))
+    
+    # Handle keyword arguments
+    for kw in keywords:
+        if kw.arg == "embed_dim":
+            new_keywords.append(ast.keyword(arg="query_size", value=kw.value))
+        elif kw.arg == "num_heads":
+            new_keywords.append(ast.keyword(arg="num_heads", value=kw.value))
+        elif kw.arg == "dropout":
+            # Only add dropout_p if dropout is explicitly specified and > 0
+            new_keywords.append(ast.keyword(arg="dropout_p", value=kw.value))
+        elif kw.arg == "bias":
+            # PyTorch bias -> Equinox use_*_bias
+            new_keywords.extend([
+                ast.keyword(arg="use_query_bias", value=kw.value),
+                ast.keyword(arg="use_key_bias", value=kw.value),
+                ast.keyword(arg="use_value_bias", value=kw.value),
+                ast.keyword(arg="use_output_bias", value=kw.value),
+            ])
+        # Skip PyTorch-specific parameters that don't exist in Equinox
+        elif kw.arg not in {"batch_first", "device", "dtype", "add_bias_kv", "add_zero_attn", "kdim", "vdim"}:
+            new_keywords.append(kw)
+    
+    # Add key parameter
+    new_keywords.append(ast.keyword(arg="key", value=ast.Name(id="subkey", ctx=ast.Load())))
+    
+    # Create the Equinox MultiheadAttention call
+    transformed_node = ast.Call(
+        func=ast.Attribute(
             value=ast.Attribute(
                 value=ast.Name(id="eqx", ctx=ast.Load()),
                 attr="nn",
@@ -129,56 +188,109 @@ def _create_multihead_attention_converter() -> Callable[[ast.Call, int], tuple[a
             ),
             attr="MultiheadAttention",
             ctx=ast.Load()
-        )
-        
-        return transformed_node, type_annotation
+        ),
+        args=[],  # Use only keyword arguments for clarity
+        keywords=new_keywords
+    )
     
-    return converter
+    type_annotation = ast.Attribute(
+        value=ast.Attribute(
+            value=ast.Name(id="eqx", ctx=ast.Load()),
+            attr="nn",
+            ctx=ast.Load()
+        ),
+        attr="MultiheadAttention",
+        ctx=ast.Load()
+    )
+    
+    return transformed_node, type_annotation
 
 
-# Single unified mapping replacing all previous mapping dictionaries
-MODULE_CONFIGS: dict[str, ModuleConfig] = {
-    "Linear": ModuleConfig(
-        target_module="eqx.nn.Linear",
-        default_parameters={"use_bias": True}
-    ),
-    "Conv1d": ModuleConfig(
-        target_module="eqx.nn.Conv1d",
-        default_parameters={"use_bias": True}
-    ),
-    "Conv2d": ModuleConfig(
-        target_module="eqx.nn.Conv2d",
-        default_parameters={"use_bias": True}
-    ),
-    "Conv3d": ModuleConfig(
-        target_module="eqx.nn.Conv3d",
-        default_parameters={"use_bias": True}
-    ),
-    "BatchNorm1d": ModuleConfig(target_module="eqx.nn.BatchNorm1d"),
-    "BatchNorm2d": ModuleConfig(target_module="eqx.nn.BatchNorm2d"),
-    "BatchNorm3d": ModuleConfig(target_module="eqx.nn.BatchNorm3d"),
-    "Dropout": ModuleConfig(target_module="eqx.nn.Dropout"),
-    "LSTM": ModuleConfig(
-        target_module="eqx.nn.LSTMCell",
-        args_slice=slice(0, 2)  # Only take input_size, hidden_size
-    ),
-    "RNN": ModuleConfig(
-        target_module="ElmanRNNCell",
-        custom_definition=_get_elman_rnn_cell_definition(),
-        parameter_filters={"batch_first", "dropout", "bidirectional", "num_layers"},
-        args_slice=slice(0, 2)
-    ),
-    "MultiheadAttention": ModuleConfig(
-        target_module="eqx.nn.MultiheadAttention",
-        parameter_filters={"device", "dtype", "add_bias_kv", "add_zero_attn", "kdim", "vdim"},
-        default_parameters={"use_bias": True}
-    ),
-    "Parameter": ModuleConfig(target_module="jnp.ndarray"),
-}
+def transform_rnn_module(node: ast.Call, key_counter: int) -> tuple[ast.Call, ast.AST]:
+    """Transform RNN module to ElmanRNNCell with proper parameter filtering."""
+    # Filter out PyTorch-specific parameters
+    filtered_keywords = []
+    pytorch_specific_params = {"batch_first", "dropout", "bidirectional", "num_layers"}
+    
+    for kw in node.keywords:
+        if kw.arg not in pytorch_specific_params:
+            filtered_keywords.append(kw)
+    
+    # Add key parameter
+    filtered_keywords.append(ast.keyword(arg="key", value=ast.Name(id="subkey", ctx=ast.Load())))
+    
+    # Select only input_size and hidden_size arguments
+    args = node.args[:2] if len(node.args) >= 2 else node.args
+    
+    # Create ElmanRNNCell call
+    transformed_node = ast.Call(
+        func=ast.Name(id="ElmanRNNCell", ctx=ast.Load()),
+        args=args,
+        keywords=filtered_keywords
+    )
+    
+    type_annotation = ast.Name(id="ElmanRNNCell", ctx=ast.Load())
+    
+    return transformed_node, type_annotation
 
-# Cache for auto-transpiled modules to avoid re-transpiling
-_AUTO_TRANSPILED_CACHE: dict[str, tuple[str, str]] = {}  # module_name -> (class_def, type_annotation)
 
+def transform_parameter(node: ast.Call, key_counter: int) -> tuple[ast.Call, ast.AST]:
+    """Transform nn.Parameter to jnp.ndarray with proper tensor creation."""
+    if node.args and len(node.args) > 0:
+        inner_call = node.args[0]  # Extract inner tensor creation (e.g., torch.randn(...))
+        
+        # Check if this is a torch.randn call that needs conversion
+        if (isinstance(inner_call, ast.Call) and 
+            isinstance(inner_call.func, ast.Attribute) and
+            isinstance(inner_call.func.value, ast.Name) and
+            inner_call.func.value.id == "torch" and
+            inner_call.func.attr == "randn"):
+            
+            # Convert torch.randn(shape_args...) to jax.random.normal(key, (shape_args...))
+            # Create the shape tuple from the original arguments
+            if len(inner_call.args) == 1:
+                # Single argument - use as-is
+                shape_arg = inner_call.args[0]
+            else:
+                # Multiple arguments - wrap in tuple
+                shape_arg = ast.Tuple(elts=inner_call.args, ctx=ast.Load())
+            
+            # Create jax.random.normal(subkey, shape)
+            transformed_node = ast.Call(
+                func=ast.Attribute(
+                    value=ast.Attribute(
+                        value=ast.Name(id="jax", ctx=ast.Load()),
+                        attr="random",
+                        ctx=ast.Load()
+                    ),
+                    attr="normal",
+                    ctx=ast.Load()
+                ),
+                args=[
+                    ast.Name(id="subkey", ctx=ast.Load()),  # key first
+                    shape_arg  # shape second
+                ],
+                keywords=[]
+            )
+        else:
+            # For other inner calls, just extract them
+            transformed_node = inner_call
+    else:
+        # No arguments, use the node as-is
+        transformed_node = node
+        
+    type_annotation = ast.Attribute(
+        value=ast.Name(id="jnp", ctx=ast.Load()),
+        attr="ndarray",
+        ctx=ast.Load()
+    )
+    
+    return transformed_node, type_annotation
+
+
+# ============================================================================
+# HELPER FUNCTIONS
+# ============================================================================
 
 def _create_module_reference_ast(module_path: str) -> ast.AST:
     """Create AST reference for module path like 'eqx.nn.Linear' or 'ElmanRNNCell'."""
@@ -192,87 +304,46 @@ def _create_module_reference_ast(module_path: str) -> ast.AST:
     return result
 
 
-def _create_generic_converter(config: ModuleConfig) -> Callable[[ast.Call, int], tuple[ast.Call, ast.AST]]:
-    """Create a converter function from configuration."""
-    def converter(node: ast.Call, key_counter: int) -> tuple[ast.Call, ast.AST]:
-        # Handle special case for Parameter
-        if config.target_module == "jnp.ndarray":
-            if node.args and len(node.args) > 0:
-                inner_call = node.args[0]  # Extract inner tensor creation (e.g., torch.randn(...))
-                
-                # Check if this is a torch.randn call that needs conversion
-                if (isinstance(inner_call, ast.Call) and 
-                    isinstance(inner_call.func, ast.Attribute) and
-                    isinstance(inner_call.func.value, ast.Name) and
-                    inner_call.func.value.id == "torch" and
-                    inner_call.func.attr == "randn"):
-                    
-                    # Convert torch.randn(shape_args...) to jax.random.normal(key, (shape_args...))
-                    # Create the shape tuple from the original arguments
-                    if len(inner_call.args) == 1:
-                        # Single argument - use as-is
-                        shape_arg = inner_call.args[0]
-                    else:
-                        # Multiple arguments - wrap in tuple
-                        shape_arg = ast.Tuple(elts=inner_call.args, ctx=ast.Load())
-                    
-                    # Create jax.random.normal(subkey, shape)
-                    transformed_node = ast.Call(
-                        func=ast.Attribute(
-                            value=ast.Attribute(
-                                value=ast.Name(id="jax", ctx=ast.Load()),
-                                attr="random",
-                                ctx=ast.Load()
-                            ),
-                            attr="normal",
-                            ctx=ast.Load()
-                        ),
-                        args=[
-                            ast.Name(id="subkey", ctx=ast.Load()),  # key first
-                            shape_arg  # shape second
-                        ],
-                        keywords=[]
-                    )
-                else:
-                    # For other inner calls, just extract them
-                    transformed_node = inner_call
-            else:
-                # No arguments, use the node as-is
-                transformed_node = node
-                
-            type_annotation = ast.Attribute(
-                value=ast.Name(id="jnp", ctx=ast.Load()),
-                attr="ndarray",
-                ctx=ast.Load()
-            )
-            return transformed_node, type_annotation
-        
-        # Filter keywords
-        keywords = list(node.keywords)
-        if config.parameter_filters:
-            keywords = [kw for kw in keywords if kw.arg not in config.parameter_filters]
-        
-        # Add default parameters
-        if config.default_parameters:
-            for param, value in config.default_parameters.items():
-                keywords.append(ast.keyword(arg=param, value=ast.Constant(value=value)))
-        
-        # Add key parameter
-        keywords.append(ast.keyword(arg="key", value=ast.Name(id="subkey", ctx=ast.Load())))
-        
-        # Select arguments
-        args = node.args
-        if config.args_slice:
-            args = args[config.args_slice]
-        
-        # Create function reference and call
-        func_ref = _create_module_reference_ast(config.target_module)
-        transformed_node = ast.Call(func=func_ref, args=args, keywords=keywords)
-        type_annotation = _create_module_reference_ast(config.target_module)
-        
-        return transformed_node, type_annotation
+def transform_simple_module(node: ast.Call, module_name: str, key_counter: int) -> tuple[ast.Call, ast.AST]:
+    """Transform a simple module using configuration."""
+    config = SIMPLE_MODULE_CONFIGS.get(module_name)
+    if not config:
+        # Fallback to simple mapping
+        target_module = SIMPLE_MODULE_MAPPINGS.get(module_name, module_name)
+        config = SimpleModuleConfig(target_module=target_module)
     
-    return converter
+    # Filter keywords
+    keywords = list(node.keywords)
+    if config.parameter_filters:
+        keywords = [kw for kw in keywords if kw.arg not in config.parameter_filters]
+    
+    # Add default parameters
+    if config.default_parameters:
+        for param, value in config.default_parameters.items():
+            keywords.append(ast.keyword(arg=param, value=ast.Constant(value=value)))
+    
+    # Add key parameter
+    keywords.append(ast.keyword(arg="key", value=ast.Name(id="subkey", ctx=ast.Load())))
+    
+    # Select arguments
+    args = node.args
+    if config.args_slice:
+        args = args[config.args_slice]
+    
+    # Create function reference and call
+    func_ref = _create_module_reference_ast(config.target_module)
+    transformed_node = ast.Call(func=func_ref, args=args, keywords=keywords)
+    type_annotation = _create_module_reference_ast(config.target_module)
+    
+    return transformed_node, type_annotation
+
+
+# ============================================================================
+# AUTO-TRANSPILATION SYSTEM - Separate concern for unsupported modules
+# ============================================================================
+
+# Cache for auto-transpiled modules to avoid re-transpiling
+_AUTO_TRANSPILED_CACHE: dict[str, tuple[str, str]] = {}  # module_name -> (class_def, type_annotation)
 
 
 def auto_transpile_module(module_name: str) -> tuple[str, str]:
@@ -343,34 +414,24 @@ def extract_class_info(transpiled_code: str, original_name: str) -> tuple[str, s
     return transpiled_code, original_name
 
 
-def create_auto_transpiled_converter(module_name: str) -> Callable[[ast.Call, int], tuple[ast.Call, ast.AST]]:
-    """Create a converter function for an auto-transpiled module.
+def transform_auto_transpiled_module(node: ast.Call, module_name: str, key_counter: int) -> tuple[ast.Call, ast.AST]:
+    """Transform a module using auto-transpilation."""
+    # Get the auto-transpiled class info
+    class_def, type_annotation = auto_transpile_module(module_name)
     
-    Args:
-        module_name: Name of the PyTorch module
-        
-    Returns:
-        Converter function
-    """
-    def converter(node: ast.Call, key_counter: int) -> tuple[ast.Call, ast.AST]:
-        # Get the auto-transpiled class info
-        class_def, type_annotation = auto_transpile_module(module_name)
-        
-        # Create a call to the auto-transpiled class
-        keywords = list(node.keywords)
-        keywords.append(ast.keyword(arg="key", value=ast.Name(id="subkey", ctx=ast.Load())))
-        
-        transformed_node = ast.Call(
-            func=ast.Name(id=type_annotation, ctx=ast.Load()),
-            args=node.args,
-            keywords=keywords,
-        )
-        
-        type_annotation_ast = ast.Name(id=type_annotation, ctx=ast.Load())
-        
-        return transformed_node, type_annotation_ast
+    # Create a call to the auto-transpiled class
+    keywords = list(node.keywords)
+    keywords.append(ast.keyword(arg="key", value=ast.Name(id="subkey", ctx=ast.Load())))
     
-    return converter
+    transformed_node = ast.Call(
+        func=ast.Name(id=type_annotation, ctx=ast.Load()),
+        args=node.args,
+        keywords=keywords,
+    )
+    
+    type_annotation_ast = ast.Name(id=type_annotation, ctx=ast.Load())
+    
+    return transformed_node, type_annotation_ast
 
 
 def _can_auto_transpile(module_name: str) -> bool:
@@ -395,11 +456,50 @@ def _can_auto_transpile(module_name: str) -> bool:
         return False
 
 
-# Public interface functions - maintain existing signatures for compatibility
+# ============================================================================
+# PUBLIC INTERFACE - Main entry points
+# ============================================================================
+
+def transform_module_call(node: ast.Call, module_name: str, key_counter: int) -> tuple[ast.Call, ast.AST]:
+    """Transform a PyTorch module call to its Equinox equivalent.
+    
+    This is the main entry point that follows the same pattern as transform_functional_call.
+    
+    Args:
+        node: The AST Call node to transform
+        module_name: Name of the PyTorch module (e.g., 'Linear', 'Conv2d')
+        key_counter: Counter for key generation (currently unused but kept for compatibility)
+        
+    Returns:
+        Tuple of (transformed_node, type_annotation)
+        
+    Raises:
+        KeyError: If no converter exists and auto-transpilation fails
+    """
+    # Check custom transformers first
+    if module_name in CUSTOM_MODULE_TRANSFORMERS:
+        transformer = CUSTOM_MODULE_TRANSFORMERS[module_name]
+        return transformer(node, key_counter)
+    
+    # Check simple configurations
+    if module_name in SIMPLE_MODULE_CONFIGS:
+        return transform_simple_module(node, module_name, key_counter)
+    
+    # Check simple mappings
+    if module_name in SIMPLE_MODULE_MAPPINGS:
+        return transform_simple_module(node, module_name, key_counter)
+    
+    # Fallback to auto-transpilation
+    try:
+        return transform_auto_transpiled_module(node, module_name, key_counter)
+    except Exception as e:
+        raise KeyError(f"No converter available for module {module_name} and auto-transpilation failed: {e}") from e
+
+
 def get_module_converter(module_name: str) -> Callable[[ast.Call, int], tuple[ast.Call, ast.AST]]:
     """Get the converter function for a given PyTorch module name.
     
-    First tries configured converters, then falls back to auto-transpilation.
+    Maintained for backward compatibility with existing transpiler code.
     
     Args:
         module_name: Name of the PyTorch module (e.g., 'Linear', 'Conv2d')
@@ -410,26 +510,16 @@ def get_module_converter(module_name: str) -> Callable[[ast.Call, int], tuple[as
     Raises:
         KeyError: If no converter exists and auto-transpilation fails
     """
-    # Special case for MultiheadAttention - use custom converter
-    if module_name == "MultiheadAttention":
-        return _create_multihead_attention_converter()
+    def converter(node: ast.Call, key_counter: int) -> tuple[ast.Call, ast.AST]:
+        return transform_module_call(node, module_name, key_counter)
     
-    # Try configured converter first
-    if module_name in MODULE_CONFIGS:
-        config = MODULE_CONFIGS[module_name]
-        return _create_generic_converter(config)
-    
-    # Fallback to auto-transpilation
-    try:
-        return create_auto_transpiled_converter(module_name)
-    except Exception as e:
-        raise KeyError(f"No converter available for module {module_name} and auto-transpilation failed: {e}") from e
+    return converter
 
 
 def is_supported_module(module_name: str) -> bool:
     """Check if a PyTorch module is supported for conversion.
     
-    Checks both configured converters and auto-transpilation capability.
+    Checks custom transformers, simple configs, simple mappings, and auto-transpilation capability.
     
     Args:
         module_name: Name of the PyTorch module
@@ -437,8 +527,16 @@ def is_supported_module(module_name: str) -> bool:
     Returns:
         True if the module can be converted, False otherwise
     """
-    # Check configured converters first
-    if module_name in MODULE_CONFIGS:
+    # Check custom transformers
+    if module_name in CUSTOM_MODULE_TRANSFORMERS:
+        return True
+    
+    # Check simple configurations
+    if module_name in SIMPLE_MODULE_CONFIGS:
+        return True
+    
+    # Check simple mappings
+    if module_name in SIMPLE_MODULE_MAPPINGS:
         return True
     
     # Check if auto-transpilation is possible
@@ -457,10 +555,9 @@ def get_required_custom_implementations(pytorch_modules: set[str]) -> dict[str, 
     required_implementations = {}
     
     for pytorch_module in pytorch_modules:
-        if pytorch_module in MODULE_CONFIGS:
-            config = MODULE_CONFIGS[pytorch_module]
-            if config.custom_definition:
-                required_implementations[config.target_module] = config.custom_definition
+        # Check if this module requires a custom implementation
+        if pytorch_module == "RNN":
+            required_implementations["ElmanRNNCell"] = CUSTOM_IMPLEMENTATIONS["ElmanRNNCell"]
     
     return required_implementations
 
@@ -471,4 +568,8 @@ def get_supported_modules() -> list[str]:
     Returns:
         List of supported module names
     """
-    return list(MODULE_CONFIGS.keys())
+    supported = set()
+    supported.update(CUSTOM_MODULE_TRANSFORMERS.keys())
+    supported.update(SIMPLE_MODULE_CONFIGS.keys())
+    supported.update(SIMPLE_MODULE_MAPPINGS.keys())
+    return list(supported)

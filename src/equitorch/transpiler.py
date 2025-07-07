@@ -442,8 +442,9 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
         # Check if it's a custom class (not a built-in PyTorch module)
         # Custom classes are also designed to work on single examples in Equinox
         # If the module_type is not in our known PyTorch modules, it's likely a custom class
-        from .converters.module_converters import MODULE_CONFIGS
-        if module_type not in MODULE_CONFIGS:
+        from .converters.module_converters import get_supported_modules
+        supported_modules = get_supported_modules()
+        if module_type not in supported_modules:
             # This is a custom class, treat it as batch-native (no vmap needed)
             return True
         
@@ -722,7 +723,7 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
         from .converters.module_converters import (
             get_required_custom_implementations,
             auto_transpile_module,
-            MODULE_CONFIGS,
+            get_supported_modules,
         )
         
         class_definitions = []
@@ -735,9 +736,10 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
             class_ast = ast.parse(class_code)
             class_definitions.extend(class_ast.body)
         
-        # Handle auto-transpiled modules (those not in MODULE_CONFIGS)
+        # Handle auto-transpiled modules (those not in our configured modules)
+        supported_modules = get_supported_modules()
         for pytorch_module in self.required_class_definitions:
-            if pytorch_module not in MODULE_CONFIGS:
+            if pytorch_module not in supported_modules:
                 # This is an auto-transpiled class (not in our configured modules)
                 try:
                     class_def_str, _ = auto_transpile_module(pytorch_module)
