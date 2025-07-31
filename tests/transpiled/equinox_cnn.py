@@ -1,6 +1,7 @@
 import jax
 import jax.numpy as jnp
 import equinox as eqx
+import equitorch.lib as eqt
 
 class SimpleCNN(eqx.Module):
     conv1: eqx.nn.Conv2d

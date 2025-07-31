@@ -34,6 +34,9 @@ SIMPLE_MODULE_MAPPINGS: dict[str, str] = {
     "BatchNorm2d": "eqx.nn.BatchNorm2d",
     "BatchNorm3d": "eqx.nn.BatchNorm3d",
     "Dropout": "eqx.nn.Dropout",
+    "LayerNorm": "eqx.nn.LayerNorm",
+    "Embedding": "eqx.nn.Embedding",
+    "ReLU": "jax.nn.relu",
 }
 
 
@@ -71,6 +74,14 @@ SIMPLE_MODULE_CONFIGS: dict[str, SimpleModuleConfig] = {
     "BatchNorm2d": SimpleModuleConfig(target_module="eqx.nn.BatchNorm2d"),
     "BatchNorm3d": SimpleModuleConfig(target_module="eqx.nn.BatchNorm3d"),
     "Dropout": SimpleModuleConfig(target_module="eqx.nn.Dropout"),
+    "LayerNorm": SimpleModuleConfig(
+        target_module="eqx.nn.LayerNorm",
+        parameter_filters={"elementwise_affine", "eps"}  # Filter PyTorch-specific params
+    ),
+    "Embedding": SimpleModuleConfig(
+        target_module="eqx.nn.Embedding",
+        parameter_filters={"padding_idx", "max_norm", "norm_type", "scale_grad_by_freq", "sparse"}
+    ),
     "LSTM": SimpleModuleConfig(
         target_module="eqx.nn.LSTMCell",
         args_slice=slice(0, 2)  # Only take input_size, hidden_size
@@ -86,6 +97,8 @@ CUSTOM_MODULE_TRANSFORMERS: dict[str, Callable[[ast.Call, int], tuple[ast.Call, 
     "MultiheadAttention": lambda node, key_counter: transform_multihead_attention(node, key_counter),
     "RNN": lambda node, key_counter: transform_rnn_module(node, key_counter),
     "Parameter": lambda node, key_counter: transform_parameter(node, key_counter),
+    "Sequential": lambda node, key_counter: transform_sequential(node, key_counter),
+    "ModuleList": lambda node, key_counter: transform_module_list(node, key_counter),
 }
 
 
@@ -138,68 +151,39 @@ CUSTOM_IMPLEMENTATIONS: dict[str, str] = {
 # ============================================================================
 
 def transform_multihead_attention(node: ast.Call, key_counter: int) -> tuple[ast.Call, ast.AST]:
-    """Transform MultiheadAttention with proper parameter mapping from PyTorch to Equinox."""
+    """Transform MultiheadAttention to use custom libEquitorch implementation."""
+    
     # Extract arguments and keywords from PyTorch call
     args = list(node.args)
-    keywords = list(node.keywords)
+    newkeywords = list(node.keywords)
     
-    # Map PyTorch parameters to Equinox parameters
-    new_keywords = []
-    
-    # Handle positional arguments
-    if len(args) >= 1:
-        # First arg: embed_dim -> query_size
-        new_keywords.append(ast.keyword(arg="query_size", value=args[0]))
-    if len(args) >= 2:
-        # Second arg: num_heads -> num_heads (same name)
-        new_keywords.append(ast.keyword(arg="num_heads", value=args[1]))
-    
-    # Handle keyword arguments
-    for kw in keywords:
-        if kw.arg == "embed_dim":
-            new_keywords.append(ast.keyword(arg="query_size", value=kw.value))
-        elif kw.arg == "num_heads":
-            new_keywords.append(ast.keyword(arg="num_heads", value=kw.value))
-        elif kw.arg == "dropout":
-            # Only add dropout_p if dropout is explicitly specified and > 0
-            new_keywords.append(ast.keyword(arg="dropout_p", value=kw.value))
-        elif kw.arg == "bias":
-            # PyTorch bias -> Equinox use_*_bias
-            new_keywords.extend([
-                ast.keyword(arg="use_query_bias", value=kw.value),
-                ast.keyword(arg="use_key_bias", value=kw.value),
-                ast.keyword(arg="use_value_bias", value=kw.value),
-                ast.keyword(arg="use_output_bias", value=kw.value),
-            ])
-        # Skip PyTorch-specific parameters that don't exist in Equinox
-        elif kw.arg not in {"batch_first", "device", "dtype", "add_bias_kv", "add_zero_attn", "kdim", "vdim"}:
-            new_keywords.append(kw)
-    
-    # Add key parameter
-    new_keywords.append(ast.keyword(arg="key", value=ast.Name(id="subkey", ctx=ast.Load())))
-    
-    # Create the Equinox MultiheadAttention call
+    # Add key parameter for JAX
+    newkeywords.append(ast.keyword(arg="key", value=ast.Name(id="subkey", ctx=ast.Load())))
+    ign = {"batch_first", "device", "dtype", "add_bias_kv", "add_zero_attn", "kdim", "vdim"}
+    keywords = [k  for k in newkeywords if k.arg not in ign]
+    # Create the call to eqt.nn.MultiheadAttention (NOT eqx.nn)
     transformed_node = ast.Call(
         func=ast.Attribute(
             value=ast.Attribute(
-                value=ast.Name(id="eqx", ctx=ast.Load()),
+                value=ast.Name(id="eqt", ctx=ast.Load()),  # Use eqt
                 attr="nn",
                 ctx=ast.Load()
             ),
-            attr="MultiheadAttention",
+            attr="EquiTorchMultiHeadAttention",  # Use the correct class name
             ctx=ast.Load()
         ),
-        args=[],  # Use only keyword arguments for clarity
-        keywords=new_keywords
+        args=args,
+        keywords=keywords
     )
     
+    # Type annotation should also use eqt.nn.MultiheadAttention
     type_annotation = ast.Attribute(
         value=ast.Attribute(
-            value=ast.Name(id="eqx", ctx=ast.Load()),
+            value=ast.Name(id="eqt", ctx=ast.Load()),
             attr="nn",
             ctx=ast.Load()
         ),
-        attr="MultiheadAttention",
+        attr="EquiTorchMultiHeadAttention",
         ctx=ast.Load()
     )
     
@@ -284,6 +268,42 @@ def transform_parameter(node: ast.Call, key_counter: int) -> tuple[ast.Call, ast
         attr="ndarray",
         ctx=ast.Load()
     )
+    
+    return transformed_node, type_annotation
+
+
+def transform_sequential(node: ast.Call, key_counter: int) -> tuple[ast.Call, ast.AST]:
+    """Transform nn.Sequential to a simple list of modules."""
+    # For now, just pass through the arguments and add key parameter
+    keywords = list(node.keywords)
+    keywords.append(ast.keyword(arg="key", value=ast.Name(id="subkey", ctx=ast.Load())))
+    
+    # Use auto-transpilation for Sequential
+    transformed_node = ast.Call(
+        func=ast.Name(id="Sequential", ctx=ast.Load()),
+        args=node.args,
+        keywords=keywords
+    )
+    
+    type_annotation = ast.Name(id="Sequential", ctx=ast.Load())
+    
+    return transformed_node, type_annotation
+
+
+def transform_module_list(node: ast.Call, key_counter: int) -> tuple[ast.Call, ast.AST]:
+    """Transform nn.ModuleList to a simple list of modules."""
+    # For now, just pass through the arguments and add key parameter
+    keywords = list(node.keywords)
+    keywords.append(ast.keyword(arg="key", value=ast.Name(id="subkey", ctx=ast.Load())))
+    
+    # Use auto-transpilation for ModuleList
+    transformed_node = ast.Call(
+        func=ast.Name(id="ModuleList", ctx=ast.Load()),
+        args=node.args,
+        keywords=keywords
+    )
+    
+    type_annotation = ast.Name(id="ModuleList", ctx=ast.Load())
     
     return transformed_node, type_annotation
 

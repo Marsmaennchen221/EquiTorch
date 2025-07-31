@@ -69,6 +69,7 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
             ast.Import(names=[ast.alias(name="jax", asname=None)]),
             ast.Import(names=[ast.alias(name="jax.numpy", asname="jnp")]),
             ast.Import(names=[ast.alias(name="equinox", asname="eqx")]),
+            ast.Import(names=[ast.alias(name="equitorch.lib", asname="eqt")])
         ]
         
         # Transform the rest of the module
@@ -169,6 +170,9 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
         """Using visitor pattern here now. nested calls are just handled recursively."""
         # First, recursively transform any nested calls
         node = self.generic_visit(node)  # type: ignore[assignment]
+        
+        # Transform keyword arguments that contain PyTorch constructs
+        node = self._transform_keyword_arguments(node)
         
         # Now transform this specific call
         if isinstance(node.func, ast.Attribute):
@@ -718,6 +722,42 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
                 return result
         return node
     
+    def _transform_keyword_arguments(self, node: ast.Call) -> ast.Call:
+        """Transform keyword arguments that contain PyTorch constructs.
+        
+        This handles cases like dtype=torch.float -> dtype=jnp.float32
+        """
+        for keyword in node.keywords:
+            if keyword.value and isinstance(keyword.value, ast.Attribute):
+                # Check for torch.dtype patterns
+                if (isinstance(keyword.value.value, ast.Name) and 
+                    keyword.value.value.id == "torch"):
+                    attr_name = keyword.value.attr
+                    # Use functional mappings to convert torch.float -> jnp.float32
+                    from .converters.functional_converters import FUNCTIONAL_MAPPINGS
+                    mapping_key = ("torch", attr_name)
+                    if mapping_key in FUNCTIONAL_MAPPINGS:
+                        new_module, new_attr = FUNCTIONAL_MAPPINGS[mapping_key]
+                        # Create new attribute reference
+                        if "." in new_module:
+                            module_parts = new_module.split(".")
+                            keyword.value = ast.Attribute(
+                                value=ast.Attribute(
+                                    value=ast.Name(id=module_parts[0], ctx=ast.Load()),
+                                    attr=module_parts[1],
+                                    ctx=ast.Load(),
+                                ),
+                                attr=new_attr,
+                                ctx=ast.Load(),
+                            )
+                        else:
+                            keyword.value = ast.Attribute(
+                                value=ast.Name(id=new_module, ctx=ast.Load()),
+                                attr=new_attr,
+                                ctx=ast.Load(),
+                            )
+        return node
+
     def _get_required_class_definitions(self) -> list[ast.stmt]:
         """Generate AST nodes for required class definitions using the unified system."""
         from .converters.module_converters import (

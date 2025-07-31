@@ -1,6 +1,7 @@
 import jax
 import jax.numpy as jnp
 import equinox as eqx
+import equitorch.lib as eqt
 
 class CustomLinear(eqx.Module):
     weight: jnp.ndarray
@@ -22,9 +23,9 @@ class CustomLinear(eqx.Module):
         return jnp.dot(x, self.weight.T) + self.bias
 
 class SimpleMLP(eqx.Module):
+    """A simple MLP that uses custom linear layers to test recursive transpilation."""
     layer1: CustomLinear
     layer2: CustomLinear
-    'A simple MLP that uses custom linear layers to test recursive transpilation.'
 
     def __init__(self, input_size, hidden_size, output_size, key=None, **kwargs):
         if key is None:

@@ -13,6 +13,11 @@ SUPPORTED_METHODS: set[str] = {
     "flatten",
     "size",
     "unsqueeze",
+    "float",
+    "int",
+    "bool",
+    "long",
+    "double",
 }
 
 # Mapping from PyTorch tensor methods to target functions
@@ -44,6 +49,16 @@ def transform_method_call(node: ast.Call, method_name: str) -> ast.Call:
         return transform_size(node)
     if method_name == "unsqueeze":
         return transform_unsqueeze(node)
+    if method_name == "float":
+        return transform_dtype_cast(node, "jnp.float32")
+    if method_name == "int":
+        return transform_dtype_cast(node, "jnp.int32")
+    if method_name == "bool":
+        return transform_dtype_cast(node, "jnp.bool_")
+    if method_name == "long":
+        return transform_dtype_cast(node, "jnp.int64")
+    if method_name == "double":
+        return transform_dtype_cast(node, "jnp.float64")
     return node
 
 
@@ -176,6 +191,40 @@ def transform_unsqueeze(node: ast.Call) -> ast.Call:
             args=[input_tensor],
             keywords=[ast.keyword(arg="axis", value=ast.Constant(value=-1))],
         )
+
+
+def transform_dtype_cast(node: ast.Call, target_dtype: str) -> ast.Call:
+    """Transform x.float(), x.int(), etc. to x.astype(jnp.dtype).
+    
+    Args:
+        node: The AST Call node for tensor.float(), tensor.int(), etc.
+        target_dtype: Target JAX dtype (e.g., 'jnp.float32')
+        
+    Returns:
+        Transformed AST Call node for tensor.astype(dtype)
+    """
+    input_tensor = node.func.value  # type: ignore[attr-defined]
+    
+    # Create the dtype reference (e.g., jnp.float32)
+    dtype_parts = target_dtype.split(".")
+    if len(dtype_parts) == 2:
+        dtype_ref = ast.Attribute(
+            value=ast.Name(id=dtype_parts[0], ctx=ast.Load()),
+            attr=dtype_parts[1],
+            ctx=ast.Load(),
+        )
+    else:
+        dtype_ref = ast.Name(id=target_dtype, ctx=ast.Load())
+    
+    return ast.Call(
+        func=ast.Attribute(
+            value=input_tensor,
+            attr="astype",
+            ctx=ast.Load(),
+        ),
+        args=[dtype_ref],
+        keywords=[],
+    )
 
 
 def is_supported_method(method_name: str) -> bool:

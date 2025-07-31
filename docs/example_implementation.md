@@ -103,3 +103,15 @@ def transform_linear(node: ast.Call) -> ast.Call:
 ```
 
 Using AST nodes as "interface" between different parts of the transpiler allows us to be very flexible in the way a certain pytorch component translation is provided. It comes with the drawback of potential code repition e.g. for extracting arguments, and maybe handling nested structures within those arguments, but it does not put a considerable burdon on the person implementing a new translation and trying to solve this generically for every potential scenario would create an unnecessary complex extraction and reinjection system that is probably more difficult to understand for the implementing person than it actually helps. Therefore I beleive that this is fine.
+
+```python
+output, weights = lax.cond(
+    need_weights,
+    compute_with_weights,
+    compute_without_weights
+)
+
+if need_weights:
+    return output, weights
+return output
+```

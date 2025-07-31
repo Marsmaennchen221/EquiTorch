@@ -16,6 +16,20 @@ FUNCTIONAL_MAPPINGS: dict[tuple[str, str], tuple[str, str]] = {
     ("torch", "tanh"): ("jnp", "tanh"),
     ("torch", "matmul"): ("jnp", "matmul"),
     ("torch", "sum"): ("jnp", "sum"),
+    ("torch", "arange"): ("jnp", "arange"),
+    ("torch", "sin"): ("jnp", "sin"),
+    ("torch", "cos"): ("jnp", "cos"),
+    ("torch", "exp"): ("jnp", "exp"),
+    ("torch", "zeros"): ("jnp", "zeros"),
+    ("torch", "randint"): ("jax.random", "randint"),
+    ("torch", "float"): ("jnp", "float32"),
+    ("torch", "int"): ("jnp", "int32"),
+    ("torch", "bool"): ("jnp", "bool_"),
+    ("torch", "float32"): ("jnp", "float32"),
+    ("torch", "int32"): ("jnp", "int32"),
+    ("torch", "int64"): ("jnp", "int64"),
+    ("math", "sqrt"): ("jnp", "sqrt"),
+    ("math", "log"): ("jnp", "log"),
 }
 
 # Complex transformations requiring custom logic
@@ -31,6 +45,7 @@ CUSTOM_FUNCTIONAL_TRANSFORMERS: dict[tuple[str, str], callable] = {
     ("torch", "flatten"): lambda node: transform_torch_flatten(node),
     ("torch", "zeros"): lambda node: transform_torch_zeros(node),
     ("torch", "randn"): lambda node: transform_torch_randn(node),
+    ("torch", "randint"): lambda node: transform_torch_randint(node),
 }
 
 
@@ -98,7 +113,7 @@ def transform_simple_functional(node: ast.Call, new_module: str, new_func: str) 
     )
 
 
-def transform_max_pool(node: ast.Call, new_module: str, new_func: str, func_name: str) -> ast.Call:  # noqa: ARG001 TODO: remove temporary noqa
+def transform_max_pool(node: ast.Call, new_module: str, new_func: str, func_name: str) -> ast.Call:
     """Transform max_pool with proper parameter mapping using jax.scipy.signal.pool.
     
     Args:
@@ -252,53 +267,46 @@ def transform_torch_randn(node: ast.Call) -> ast.Call:
     )
 
 
-# def transform_linear(node: ast.Call) -> ast.Call:
-#     """Transform F.linear(input, weight, bias) to JAX equivalent.
+def transform_torch_randint(node: ast.Call) -> ast.Call:
+    """Transform torch.randint to jax.random.randint with proper argument order.
     
-#     PyTorch: F.linear(input, weight, bias) 
-#     JAX: jnp.dot(input, weight.T) + bias (if bias is not None)
+    PyTorch: torch.randint(low, high, size)
+    JAX: jax.random.randint(key, shape, minval, maxval)
     
-#     Args:
-#         node: The AST Call node for F.linear
+    Args:
+        node: The AST Call node for torch.randint
         
-#     Returns:
-#         Transformed AST Call node
-#     """
-#     if len(node.args) < 2:
-#         return node  # Invalid call, return unchanged
+    Returns:
+        Transformed AST Call node for jax.random.randint
+    """
+    if len(node.args) < 3:
+        return node  # Invalid call
     
-#     input_tensor = node.args[0]
-#     weight = node.args[1]
-#     bias = node.args[2] if len(node.args) > 2 else None
+    low = node.args[0]
+    high = node.args[1]
+    shape = node.args[2]
     
-#     # Create weight.T (transpose)
-#     weight_transposed = ast.Attribute(
-#         value=weight,
-#         attr="T",
-#         ctx=ast.Load(),
-#     )
-    
-#     # Create jnp.dot(input, weight.T)
-#     dot_result = ast.Call(
-#         func=ast.Attribute(
-#             value=ast.Name(id="jnp", ctx=ast.Load()),
-#             attr="dot",
-#             ctx=ast.Load(),
-#         ),
-#         args=[input_tensor, weight_transposed],
-#         keywords=[],
-#     )
-    
-#     if bias is not None:
-#         # Add bias: jnp.dot(input, weight.T) + bias
-#         return ast.BinOp(
-#             left=dot_result,
-#             op=ast.Add(),
-#             right=bias,
-#         )
-#     else:
-#         return dot_result
-    
+    # Create jax.random.randint(subkey, shape, minval, maxval)
+    return ast.Call(
+        func=ast.Attribute(
+            value=ast.Attribute(
+                value=ast.Name(id="jax", ctx=ast.Load()),
+                attr="random",
+                ctx=ast.Load()
+            ),
+            attr="randint",
+            ctx=ast.Load()
+        ),
+        args=[
+            ast.Name(id="subkey", ctx=ast.Load()),  # key first
+            shape,  # shape second
+            low,    # minval third
+            high    # maxval fourth
+        ],
+        keywords=[]
+    )
+
+
 def transform_linear(node: ast.Call) -> ast.Call:
     """Transform F.linear(input, weight, bias) to JAX equivalent.
     
