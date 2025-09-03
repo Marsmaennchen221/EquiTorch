@@ -11,6 +11,13 @@ SUPPORTED_METHODS: set[str] = {
     "view",
     "reshape", 
     "flatten",
+    "size",
+    "unsqueeze",
+    "float",
+    "int",
+    "bool",
+    "long",
+    "double",
 }
 
 # Mapping from PyTorch tensor methods to target functions
@@ -38,21 +45,55 @@ def transform_method_call(node: ast.Call, method_name: str) -> ast.Call:
         return transform_reshape(node)
     if method_name == "flatten":
         return transform_tensor_flatten(node)
+    if method_name == "size":
+        return transform_size(node)
+    if method_name == "unsqueeze":
+        return transform_unsqueeze(node)
+    if method_name == "float":
+        return transform_dtype_cast(node, "jnp.float32")
+    if method_name == "int":
+        return transform_dtype_cast(node, "jnp.int32")
+    if method_name == "bool":
+        return transform_dtype_cast(node, "jnp.bool_")
+    if method_name == "long":
+        return transform_dtype_cast(node, "jnp.int64")
+    if method_name == "double":
+        return transform_dtype_cast(node, "jnp.float64")
     return node
 
 
 def transform_reshape(node: ast.Call) -> ast.Call:
-    """Transform x.view(...) or x.reshape(...) to jnp.reshape(x, ...).
+    """Transform x.view(...) or x.reshape(...) to appropriate JAX operation.
+    
+    For Equinox single-example processing, use jnp.ravel for flattening operations.
     
     Args:
         node: The AST Call node for tensor.view() or tensor.reshape()
         
     Returns:
-        Transformed AST Call node for jnp.reshape()
+        Transformed AST Call node
     """
     input_tensor = node.func.value  # type: ignore[attr-defined]
     
-    # Create shape tuple from arguments
+    # Check if this is a flattening operation like x.view(x.shape[0], -1) or x.view(batch_size, -1)
+    # Note: -1 is represented as ast.UnaryOp(op=ast.USub(), operand=ast.Constant(value=1))
+    is_negative_one = (isinstance(node.args[1], ast.UnaryOp) and
+                       isinstance(node.args[1].op, ast.USub) and
+                       isinstance(node.args[1].operand, ast.Constant) and
+                       node.args[1].operand.value == 1)
+    
+    if (len(node.args) == 2 and is_negative_one):
+        # This is a flattening operation - use jnp.ravel for single example processing
+        return ast.Call(
+            func=ast.Attribute(
+                value=ast.Name(id="jnp", ctx=ast.Load()),
+                attr="ravel",
+                ctx=ast.Load(),
+            ),
+            args=[input_tensor],
+            keywords=[],
+        )
+    # For other reshape operations, use jnp.reshape
     if node.args:
         shape = ast.Tuple(elts=list(node.args), ctx=ast.Load())
     else:
@@ -70,48 +111,118 @@ def transform_reshape(node: ast.Call) -> ast.Call:
 
 
 def transform_tensor_flatten(node: ast.Call) -> ast.Call:
-    """Transform x.flatten() to jnp.reshape(x, (x.shape[0], -1)).
+    """Transform x.flatten() to jnp.ravel(x) for single example processing.
     
     Args:
         node: The AST Call node for tensor.flatten()
         
     Returns:
-        Transformed AST Call node for jnp.reshape()
+        Transformed AST Call node for jnp.ravel()
     """
     input_tensor = node.func.value  # type: ignore[attr-defined]
     
-    # Handle flatten with start_dim parameter
-    start_dim = 1  # Default start dimension
-    if node.args and len(node.args) > 0 and isinstance(node.args[0], ast.Constant):  # If start_dim is provided as argument
-        start_dim = node.args[0].value
-    
-    # Create shape tuple for flattening
-    shape_elements: list[ast.expr]
-    if start_dim == 0:
-        # Flatten everything: (-1,)
-        shape_elements = [ast.Constant(value=-1)]
-    else:
-        # Keep first start_dim dimensions, flatten the rest: (x.shape[0], ..., x.shape[start_dim-1], -1)
-        shape_elements = []
-        for i in range(start_dim):
-            shape_elements.append(
-                ast.Subscript(
-                    value=ast.Attribute(value=input_tensor, attr="shape", ctx=ast.Load()),
-                    slice=ast.Constant(value=i),
-                    ctx=ast.Load(),
-                ),
-            )
-        shape_elements.append(ast.Constant(value=-1))
-    
-    shape_tuple = ast.Tuple(elts=shape_elements, ctx=ast.Load())
-    
+    # For Equinox models that process single examples, use jnp.ravel
+    # This flattens the tensor completely, which is appropriate for single examples
     return ast.Call(
         func=ast.Attribute(
             value=ast.Name(id="jnp", ctx=ast.Load()),
-            attr="reshape",
+            attr="ravel",
             ctx=ast.Load(),
         ),
-        args=[input_tensor, shape_tuple],
+        args=[input_tensor],
+        keywords=[],
+    )
+
+
+def transform_size(node: ast.Call) -> ast.Subscript:
+    """Transform x.size(dim) to x.shape[dim].
+    
+    Args:
+        node: The AST Call node for tensor.size()
+        
+    Returns:
+        Transformed AST Subscript node for tensor.shape[dim]
+    """
+    input_tensor = node.func.value  # type: ignore[attr-defined]
+    
+    if node.args and len(node.args) > 0:
+        # x.size(dim) -> x.shape[dim]
+        dim = node.args[0]
+        return ast.Subscript(
+            value=ast.Attribute(value=input_tensor, attr="shape", ctx=ast.Load()),
+            slice=dim,
+            ctx=ast.Load(),
+        )
+    else:
+        # x.size() -> x.shape (return the whole shape tuple)
+        return ast.Attribute(value=input_tensor, attr="shape", ctx=ast.Load())  # type: ignore[return-value]
+
+
+def transform_unsqueeze(node: ast.Call) -> ast.Call:
+    """Transform x.unsqueeze(dim) to jnp.expand_dims(x, axis=dim).
+    
+    Args:
+        node: The AST Call node for tensor.unsqueeze()
+        
+    Returns:
+        Transformed AST Call node for jnp.expand_dims()
+    """
+    input_tensor = node.func.value  # type: ignore[attr-defined]
+    
+    if node.args and len(node.args) > 0:
+        dim = node.args[0]
+        return ast.Call(
+            func=ast.Attribute(
+                value=ast.Name(id="jnp", ctx=ast.Load()),
+                attr="expand_dims",
+                ctx=ast.Load(),
+            ),
+            args=[input_tensor],
+            keywords=[ast.keyword(arg="axis", value=dim)],
+        )
+    else:
+        # If no dimension specified, default to last dimension
+        return ast.Call(
+            func=ast.Attribute(
+                value=ast.Name(id="jnp", ctx=ast.Load()),
+                attr="expand_dims",
+                ctx=ast.Load(),
+            ),
+            args=[input_tensor],
+            keywords=[ast.keyword(arg="axis", value=ast.Constant(value=-1))],
+        )
+
+
+def transform_dtype_cast(node: ast.Call, target_dtype: str) -> ast.Call:
+    """Transform x.float(), x.int(), etc. to x.astype(jnp.dtype).
+    
+    Args:
+        node: The AST Call node for tensor.float(), tensor.int(), etc.
+        target_dtype: Target JAX dtype (e.g., 'jnp.float32')
+        
+    Returns:
+        Transformed AST Call node for tensor.astype(dtype)
+    """
+    input_tensor = node.func.value  # type: ignore[attr-defined]
+    
+    # Create the dtype reference (e.g., jnp.float32)
+    dtype_parts = target_dtype.split(".")
+    if len(dtype_parts) == 2:
+        dtype_ref = ast.Attribute(
+            value=ast.Name(id=dtype_parts[0], ctx=ast.Load()),
+            attr=dtype_parts[1],
+            ctx=ast.Load(),
+        )
+    else:
+        dtype_ref = ast.Name(id=target_dtype, ctx=ast.Load())
+    
+    return ast.Call(
+        func=ast.Attribute(
+            value=input_tensor,
+            attr="astype",
+            ctx=ast.Load(),
+        ),
+        args=[dtype_ref],
         keywords=[],
     )
 

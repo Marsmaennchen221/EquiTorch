@@ -1,8 +1,11 @@
 import ast
 import itertools
+import sys
+import types
 from pathlib import Path
 from typing import Any
 
+from equitorch.transpiler import transpile
 from tests.helpers.resources import resolve_resource_path
 
 
@@ -23,6 +26,16 @@ def read_python_code(resource_path: str | Path) -> str:
     if not absolute_path.is_file() or not absolute_path.suffix == ".py":
         raise ValueError("Resource is not a valid Python file")
     return absolute_path.read_text()
+
+
+def import_transpiled_module(resource_path: str | Path):
+    """Dynamically import a transpiled module."""
+    pytorch_code = read_python_code(resource_path)
+    transpiled_code = transpile(pytorch_code)
+    module = types.ModuleType("transpiled_module")
+    exec(transpiled_code, module.__dict__)
+    sys.modules["transpiled_module"] = module
+    return module
 
 
 def compare_ast(tree1: ast.AST, tree2: ast.AST) -> bool:

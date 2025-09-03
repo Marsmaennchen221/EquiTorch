@@ -28,11 +28,6 @@ from .method_converters import (
     transform_tensor_flatten,
 )
 from .module_converters import (
-    MODULE_MAPPINGS,
-    convert_batchnorm,
-    convert_conv,
-    convert_dropout,
-    convert_linear,
     get_module_converter,
     get_supported_modules,
     is_supported_module,
@@ -40,14 +35,9 @@ from .module_converters import (
 
 __all__ = [  # noqa: RUF022
     # Module converters
-    "convert_batchnorm",
-    "convert_conv",
-    "convert_dropout",
-    "convert_linear",
     "get_module_converter",
     "get_supported_modules",
     "is_supported_module",
-    "MODULE_MAPPINGS",
 
     # Functional converters
     "FUNCTIONAL_MAPPINGS",
