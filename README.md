@@ -122,6 +122,9 @@ pytest --cov=src/equitorch
 
 # Verbose output
 pytest -v
+
+# Run tests via uv
+uv run pytest
 ```
 
 ### Run Specific Test Categories
@@ -138,6 +141,19 @@ pytest tests/equitorch/test_transpiler.py::test_rnn_transpilation -v
 
 # Test LSTM transpilation (currently failing - in development)
 pytest tests/equitorch/test_transpiler.py::test_lstm_transpilation -v
+```
+
+### Update Snapshots of Tests
+
+```bash
+# Update all snapshots and remove unused snapshots
+pytest --snapshot-update
+
+# Update snapshots from specific test
+pytest tests/equitorch/test_transpiler.py::test_nn_transpilation --snapshot-update
+
+# Update snapshots via uv
+uv run pytest --snapshot-update
 ```
 
 ### Understanding Test Results
