@@ -52,6 +52,29 @@ def compare_ast(tree1: ast.AST, tree2: ast.AST) -> bool:
     return _compare_ast_recursive(tree1, tree2)
 
 
+def write_transpiled_code(transpiled_code: str, test_id: str) -> None:
+    """Write transpiled code to a file in the tests/transpiled/ folder.
+
+    Args:
+        transpiled_code: The transpiled Equinox code string
+        test_id: The test identifier (e.g., 'cnn', 'lstm', 'mlp')
+    """
+    # Get the project root directory (assuming we're in tests/helpers/)
+    project_root = Path(__file__).parent.parent.parent
+    transpiled_dir = project_root / "tests" / "transpiled"
+    
+    # Create the directory if it doesn't exist
+    transpiled_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Generate filename based on test_id
+    filename = f"equinox_{test_id}.py"
+    output_path = transpiled_dir / filename
+    
+    # Write the transpiled code to the file
+    output_path.write_text(transpiled_code, encoding="utf-8")
+    print(f"Transpiled code written to: {output_path}")
+
+
 def _compare_ast_recursive(tree1: Any, tree2: Any) -> bool:
     """Compare two ast trees.
 

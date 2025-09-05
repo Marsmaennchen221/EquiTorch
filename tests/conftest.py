@@ -5,6 +5,22 @@ from syrupy import SnapshotAssertion
 from syrupy.extensions.single_file import SingleFileSnapshotExtension
 
 
+def pytest_addoption(parser):
+    """Add custom command line options for pytest."""
+    parser.addoption(
+        "--write-transpiled",
+        action="store_true",
+        default=False,
+        help="Write transpiled code to files in tests/transpiled/ folder"
+    )
+
+
+@pytest.fixture
+def write_transpiled(request):
+    """Fixture to access the --write-transpiled command line option."""
+    return request.config.getoption("--write-transpiled")
+
+
 class PythonCodeSnapshotExtension(SingleFileSnapshotExtension):
     _file_extension = "snapshot.py"
 

@@ -10,7 +10,7 @@ from syrupy import SnapshotAssertion
 
 from equitorch import converters
 from equitorch.transpiler import PyTorchToEquinoxTransformer, transpile
-from tests.helpers.utils import compare_ast, read_python_code, import_transpiled_module
+from tests.helpers.utils import compare_ast, read_python_code, import_transpiled_module, write_transpiled_code
 
 
 def transform_to_equinox_ast(pytorch_code: str) -> ast.AST:
@@ -33,13 +33,19 @@ def transform_to_equinox_ast(pytorch_code: str) -> ast.AST:
     ],
     ids=["cnn", "lstm", "mlp", "multihead_attention", "multihead_attention_no_dropout", "rnn", "simple_custom_mlp", "transformer"],
 )
-def test_nn_transpilation(resource_path: str | Path, snapshot_equinox_code: SnapshotAssertion) -> None:
+def test_nn_transpilation(resource_path: str | Path, snapshot_equinox_code: SnapshotAssertion, write_transpiled: bool, request) -> None:
     """Test transpilation of PyTorch neural networks to Equinox."""
     # Read PyTorch code
     pytorch_code = read_python_code(resource_path)
 
     # Transpile to Equinox code
     equinox_code = transpile(pytorch_code)
+
+    # Write transpiled code to file if requested - MOVED HERE to write even if tests fail
+    if write_transpiled:
+        # Get the test ID from the parametrized test
+        test_id = request.node.callspec.id
+        write_transpiled_code(equinox_code, test_id)
 
     # Compare with previous saved snapshot
     assert equinox_code == snapshot_equinox_code
@@ -1130,7 +1136,9 @@ def test_multihead_attention_no_dropout_instantiation_and_execution():
         return jnp.mean((output - target) ** 2)
     
     try:
-        grad_fn = jax.grad(loss_fn, argnums=0)
+        # Use eqx.filter_grad instead of jax.grad to properly handle non-differentiable parameters
+        import equinox as eqx
+        grad_fn = eqx.filter_grad(loss_fn)
         grads = grad_fn(model, query, key_tensor, value, target)
         
         # Verify gradients exist and are finite

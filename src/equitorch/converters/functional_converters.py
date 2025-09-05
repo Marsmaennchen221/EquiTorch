@@ -20,8 +20,6 @@ FUNCTIONAL_MAPPINGS: dict[tuple[str, str], tuple[str, str]] = {
     ("torch", "sin"): ("jnp", "sin"),
     ("torch", "cos"): ("jnp", "cos"),
     ("torch", "exp"): ("jnp", "exp"),
-    ("torch", "zeros"): ("jnp", "zeros"),
-    ("torch", "randint"): ("jax.random", "randint"),
     ("torch", "float"): ("jnp", "float32"),
     ("torch", "int"): ("jnp", "int32"),
     ("torch", "bool"): ("jnp", "bool_"),

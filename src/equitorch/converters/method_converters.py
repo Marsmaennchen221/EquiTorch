@@ -13,6 +13,7 @@ SUPPORTED_METHODS: set[str] = {
     "flatten",
     "size",
     "unsqueeze",
+    "transpose",
     "float",
     "int",
     "bool",
@@ -49,6 +50,8 @@ def transform_method_call(node: ast.Call, method_name: str) -> ast.Call:
         return transform_size(node)
     if method_name == "unsqueeze":
         return transform_unsqueeze(node)
+    if method_name == "transpose":
+        return transform_transpose(node)
     if method_name == "float":
         return transform_dtype_cast(node, "jnp.float32")
     if method_name == "int":
@@ -190,6 +193,54 @@ def transform_unsqueeze(node: ast.Call) -> ast.Call:
             ),
             args=[input_tensor],
             keywords=[ast.keyword(arg="axis", value=ast.Constant(value=-1))],
+        )
+
+
+def transform_transpose(node: ast.Call) -> ast.Call:
+    """Transform x.transpose(dim0, dim1) to jnp.transpose(x, axes=(dim0, dim1, ...)).
+    
+    Args:
+        node: The AST Call node for tensor.transpose()
+        
+    Returns:
+        Transformed AST Call node for jnp.transpose()
+    """
+    input_tensor = node.func.value  # type: ignore[attr-defined]
+    
+    if node.args and len(node.args) >= 2:
+        # x.transpose(dim0, dim1) -> jnp.transpose(x, axes=(dim0, dim1))
+        axes_tuple = ast.Tuple(elts=list(node.args), ctx=ast.Load())
+        return ast.Call(
+            func=ast.Attribute(
+                value=ast.Name(id="jnp", ctx=ast.Load()),
+                attr="transpose",
+                ctx=ast.Load(),
+            ),
+            args=[input_tensor],
+            keywords=[ast.keyword(arg="axes", value=axes_tuple)],
+        )
+    elif node.args and len(node.args) == 1:
+        # x.transpose(dim) -> jnp.swapaxes(x, dim, -1) for single dimension
+        dim = node.args[0]
+        return ast.Call(
+            func=ast.Attribute(
+                value=ast.Name(id="jnp", ctx=ast.Load()),
+                attr="swapaxes",
+                ctx=ast.Load(),
+            ),
+            args=[input_tensor, dim, ast.Constant(value=-1)],
+            keywords=[],
+        )
+    else:
+        # x.transpose() -> jnp.transpose(x) (transpose all dimensions)
+        return ast.Call(
+            func=ast.Attribute(
+                value=ast.Name(id="jnp", ctx=ast.Load()),
+                attr="transpose",
+                ctx=ast.Load(),
+            ),
+            args=[input_tensor],
+            keywords=[],
         )
 
 
