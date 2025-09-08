@@ -5,6 +5,7 @@ PyTorch functional method calls (F.relu(), torch.flatten(), etc.) to their JAX/N
 """
 
 import ast
+from typing import Callable
 
 # Simple 1:1 functional mappings that only need function name changes
 # Format: (module, function) -> (target_module, target_function)
@@ -32,7 +33,7 @@ FUNCTIONAL_MAPPINGS: dict[tuple[str, str], tuple[str, str]] = {
 
 # Complex transformations requiring custom logic
 # Format: (module, function) -> transformer_function
-CUSTOM_FUNCTIONAL_TRANSFORMERS: dict[tuple[str, str], callable] = {
+CUSTOM_FUNCTIONAL_TRANSFORMERS: dict[tuple[str, str], Callable] = {
     ("F", "linear"): lambda node: transform_linear(node),
     ("F", "layer_norm"): lambda node: transform_layer_norm(node),
     ("F", "group_norm"): lambda node: transform_group_norm(node),
@@ -111,7 +112,7 @@ def transform_simple_functional(node: ast.Call, new_module: str, new_func: str) 
     )
 
 
-def transform_max_pool(node: ast.Call, new_module: str, new_func: str, func_name: str) -> ast.Call:
+def transform_max_pool(node: ast.Call, new_module: str, new_func: str, func_name: str) -> ast.Call | ast.expr:
     """Transform max_pool with proper parameter mapping using jax.scipy.signal.pool.
     
     Args:
@@ -305,7 +306,7 @@ def transform_torch_randint(node: ast.Call) -> ast.Call:
     )
 
 
-def transform_linear(node: ast.Call) -> ast.Call:
+def transform_linear(node: ast.Call) -> ast.Call | ast.expr:
     """Transform F.linear(input, weight, bias) to JAX equivalent.
     
     PyTorch: F.linear(input, weight, bias) 

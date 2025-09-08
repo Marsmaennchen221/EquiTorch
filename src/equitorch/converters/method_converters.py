@@ -29,7 +29,7 @@ METHOD_MAPPINGS: dict[str, str] = {
 }
 
 
-def transform_method_call(node: ast.Call, method_name: str) -> ast.Call:
+def transform_method_call(node: ast.Call, method_name: str) -> ast.Call | ast.Attribute | ast.Subscript:
     """Transform a PyTorch tensor method call to its JAX/NumPy equivalent.
     
     Args:
@@ -137,7 +137,7 @@ def transform_tensor_flatten(node: ast.Call) -> ast.Call:
     )
 
 
-def transform_size(node: ast.Call) -> ast.Subscript:
+def transform_size(node: ast.Call) -> ast.Subscript | ast.Attribute:
     """Transform x.size(dim) to x.shape[dim].
     
     Args:
@@ -258,6 +258,7 @@ def transform_dtype_cast(node: ast.Call, target_dtype: str) -> ast.Call:
     
     # Create the dtype reference (e.g., jnp.float32)
     dtype_parts = target_dtype.split(".")
+    dtype_ref: ast.Attribute | ast.Name
     if len(dtype_parts) == 2:
         dtype_ref = ast.Attribute(
             value=ast.Name(id=dtype_parts[0], ctx=ast.Load()),

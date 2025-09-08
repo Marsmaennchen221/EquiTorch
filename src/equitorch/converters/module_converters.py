@@ -224,6 +224,7 @@ def transform_rnn_module(node: ast.Call, key_counter: int) -> tuple[ast.Call, as
 
 def transform_parameter(node: ast.Call, key_counter: int) -> tuple[ast.Call, ast.AST]:
     """Transform nn.Parameter to jnp.ndarray with proper tensor creation."""
+    transformed_node: ast.Call | ast.Expr
     if node.args and len(node.args) > 0:
         inner_call = node.args[0]  # Extract inner tensor creation (e.g., torch.randn(...))
         
@@ -334,7 +335,7 @@ def transform_module_list(node: ast.Call, key_counter: int) -> tuple[ast.Call, a
     return transformed_node, type_annotation
 
 
-def transform_relu(node: ast.Call, key_counter: int) -> tuple[ast.Call, ast.AST]:
+def transform_relu(node: ast.Call, key_counter: int) -> tuple[ast.Attribute, ast.Attribute]:
     """Transform nn.ReLU to jax.nn.relu function reference for Sequential.
     
     In Equinox Sequential, activation functions should be passed as functions,
@@ -405,13 +406,13 @@ def transform_dropout(node: ast.Call, key_counter: int) -> tuple[ast.Call, ast.A
 # HELPER FUNCTIONS
 # ============================================================================
 
-def _create_module_reference_ast(module_path: str) -> ast.AST:
+def _create_module_reference_ast(module_path: str) -> ast.expr:
     """Create AST reference for module path like 'eqx.nn.Linear' or 'ElmanRNNCell'."""
     if "." not in module_path:
         return ast.Name(id=module_path, ctx=ast.Load())
     
     parts = module_path.split(".")
-    result = ast.Name(id=parts[0], ctx=ast.Load())
+    result: ast.Name | ast.Attribute = ast.Name(id=parts[0], ctx=ast.Load())
     for part in parts[1:]:
         result = ast.Attribute(value=result, attr=part, ctx=ast.Load())
     return result
@@ -682,7 +683,7 @@ def get_supported_modules() -> list[str]:
     Returns:
         List of supported module names
     """
-    supported = set()
+    supported: set[str] = set()
     supported.update(CUSTOM_MODULE_TRANSFORMERS.keys())
     supported.update(SIMPLE_MODULE_CONFIGS.keys())
     supported.update(SIMPLE_MODULE_MAPPINGS.keys())

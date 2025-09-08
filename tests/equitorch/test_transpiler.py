@@ -298,9 +298,9 @@ class TestPyTorchToEquinoxTransformer:
         [
             ("def __init__(self, in_channels, num_classes):\n\tsuper(SimpleCNN, self).__init__()\n\tself.conv1 = nn.Conv2d(in_channels=in_channels, out_channels=16, kernel_size=3, stride=1, padding=1)\n\tself.conv2 = nn.Conv2d(in_channels=16, out_channels=32, kernel_size=3, stride=1, padding=1)\n\tself.fc = nn.Linear(32 * 7 * 7, num_classes)", ["conv1", "conv2", "fc"]),
             ("def __init__(self, in_channels, num_classes):\n\tsuper(SimpleCNN, self).__init__()", []),
-            ("def __init__(self, in_channels, num_classes):\n\tsuper(SimpleCNN, self).__init__()\n\tself.number = 40 + 2", []),
-            ("def __init__(self, in_channels, num_classes):\n\tsuper(SimpleCNN, self).__init__()\n\tself.number = add_numbers(40, 2)", []),
-            ("def __init__(self, in_channels, num_classes):\n\tsuper(SimpleCNN, self).__init__()\n\tself.conv1 = nn.Conv2d(in_channels=in_channels, out_channels=16, kernel_size=3, stride=1, padding=1)\n\tself.conv2 = nn.Conv2d(in_channels=16, out_channels=32, kernel_size=3, stride=1, padding=1)\n\tself.fc = nn.Linear(32 * 7 * 7, num_classes)\n\tself.constant = 42", ["conv1", "conv2", "fc"]),
+            ("def __init__(self, in_channels, num_classes):\n\tsuper(SimpleCNN, self).__init__()\n\tself.number = 40 + 2", ["number"]),
+            ("def __init__(self, in_channels, num_classes):\n\tsuper(SimpleCNN, self).__init__()\n\tself.number = add_numbers(40, 2)", ["number"]),
+            ("def __init__(self, in_channels, num_classes):\n\tsuper(SimpleCNN, self).__init__()\n\tself.conv1 = nn.Conv2d(in_channels=in_channels, out_channels=16, kernel_size=3, stride=1, padding=1)\n\tself.conv2 = nn.Conv2d(in_channels=16, out_channels=32, kernel_size=3, stride=1, padding=1)\n\tself.fc = nn.Linear(32 * 7 * 7, num_classes)\n\tself.constant = 42", ["conv1", "conv2", "fc", "constant"]),
             ("def __init__(self, in_channels, num_classes):\n\tsuper(SimpleCNN, self).__init__()\n\tself.conv1 = nn.Conv2d(in_channels=in_channels, out_channels=16, kernel_size=3, stride=1, padding=1)\n\ta = 2 + 40\n\tself.conv2 = nn.Conv2d(in_channels=16, out_channels=32, kernel_size=3, stride=1, padding=1)\n\tself.fc = nn.Linear(32 * 7 * 7, num_classes)", ["conv1", "conv2", "fc"]),
             ("def __init__(self, in_channels, num_classes):\n\tsuper(SimpleCNN, self).__init__()\n\tself.conv1 = nn.Conv2d(in_channels=in_channels, out_channels=16, kernel_size=3, stride=1, padding=1)\n\tself.conv1 = nn.Conv3d(in_channels=16, out_channels=32, kernel_size=3, stride=1, padding=1)", ["conv1"]),
         ],
@@ -315,6 +315,7 @@ class TestPyTorchToEquinoxTransformer:
         for name, param_body in current_class_params.items():
             assert name in names
             assert isinstance(param_body["type"], str)
+            print(ast.dump(param_body["call_node"], indent=4))
             assert isinstance(param_body["call_node"], ast.Call)
             assert isinstance(param_body["call_node"].func, ast.Attribute)
             assert param_body["call_node"].func.attr == param_body["type"]
