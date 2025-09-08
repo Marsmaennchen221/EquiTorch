@@ -82,13 +82,13 @@ ignore = [
     # line-too-long (handled by black)
     "E501",
     # tab-indentation (handled by black)
-    "W191",
+    #"W191",
     # trailing-whitespace (handled by black)
-    "W291",
+    #"W291",
     # missing-newline-at-end-of-file (handled by black)
-    "W292",
+    #"W292",
     # blank-line-with-witespace (handled by black)
-    "W293",
+    #"W293",
     # if-else-block-instead-of-if-exp (an if-else block can be more readable)
     "SIM108",
     # raise-vanilla-args
