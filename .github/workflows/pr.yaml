@@ -17,14 +17,13 @@ jobs:
         os: [
           "ubuntu-latest",
           "macos-latest",
-          # windows takes too long...
-#          "windows-latest",
+          "windows-latest",
         ]
         exclude:
           - os: "macos-latest"
             python-version: "3.12"
-#          - os: "windows-latest"
-#            python-version: "3.12"
+          - os: "windows-latest"
+            python-version: "3.12"
 
     runs-on: ${{ matrix.os }}
 
