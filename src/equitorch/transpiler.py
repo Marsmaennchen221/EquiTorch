@@ -835,7 +835,7 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
             )
             call_node.keywords.append(key_keyword)
 
-    def _transform_module_init(self, node: ast.Call, current_class_params: dict[str, dict[str, str | ast.AST | None]]) -> ast.Call:
+    def _transform_module_init(self, node: ast.Call, current_class_params: dict[str, dict[str, str | ast.AST | None]]) -> ast.expr:
         """Transform PyTorch module initialization to Equinox using modular converters."""
         module_type = node.func.attr  # type: ignore[attr-defined]
         if is_supported_module(module_type):
@@ -854,7 +854,7 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
                 self._store_type_annotation(node, type_annotation, current_class_params)
                 # Don't add key parameter for Parameter, Dropout, Sequential, or LayerNorm
                 if module_type not in ["Parameter", "Dropout", "Sequential", "LayerNorm"]:
-                    self._add_key_to_call(transformed_node)
+                    self._add_key_to_call(transformed_node)  # type: ignore[arg-type]
                 return transformed_node
             else:
                 # Old interface - add key parameter (except for Parameter and Dropout)

@@ -33,7 +33,7 @@ def transform_to_equinox_ast(pytorch_code: str) -> ast.AST:
     ],
     ids=["cnn", "lstm", "mlp", "multihead_attention", "multihead_attention_no_dropout", "rnn", "simple_custom_mlp", "transformer"],
 )
-def test_nn_transpilation(resource_path: str | Path, snapshot_equinox_code: SnapshotAssertion, write_transpiled: bool, request) -> None:
+def test_nn_transpilation(resource_path: str | Path, snapshot_equinox_code: SnapshotAssertion, write_transpiled: bool, request) -> None:  # noqa: FBT001
     """Test transpilation of PyTorch neural networks to Equinox."""
     # Read PyTorch code
     pytorch_code = read_python_code(resource_path)
@@ -618,7 +618,7 @@ class TestPyTorchToEquinoxTransformer:
         transformer = PyTorchToEquinoxTransformer()
         transformer.visit(tree)
         assert not isinstance(tree.body[-4], ast.Expr)  # No more modules than expected
-        for key_index, node_index in enumerate([-3, -2]):
+        for _key_index, node_index in enumerate([-3, -2]):
             assert isinstance(tree.body[node_index], ast.Expr)
             assert isinstance(tree.body[node_index].value, ast.Call)  # type: ignore[attr-defined]
             assert tree.body[node_index].value.keywords[-1].arg == "key"  # type: ignore[attr-defined]
@@ -628,7 +628,7 @@ class TestPyTorchToEquinoxTransformer:
             assert tree.body[node_index].value.keywords[-1].value.id == f"subkey"  # type: ignore[attr-defined]
 
         assert isinstance(tree.body[-1], ast.ClassDef)  # ClassDef should reset key counter
-        for key_index, node_index in enumerate([-2, -1]):
+        for _key_index, node_index in enumerate([-2, -1]):
             assert isinstance(tree.body[-1].body[node_index], ast.Expr)
             assert isinstance(tree.body[-1].body[node_index].value, ast.Call)  # type: ignore[attr-defined]
             assert tree.body[-1].body[node_index].value.keywords[-1].arg == "key"  # type: ignore[attr-defined]
@@ -697,7 +697,7 @@ def _test_gradients(model, input_data, loss_fn=None):
             assert jnp.all(jnp.isfinite(grad_tree)), "Gradients contain non-finite values"
             assert jnp.any(grad_tree != 0), "All gradients are zero"
         elif hasattr(grad_tree, '__dict__'):
-            for attr_name, attr_value in grad_tree.__dict__.items():
+            for _attr_name, attr_value in grad_tree.__dict__.items():
                 if attr_value is not None:
                     check_gradients(attr_value)
     
@@ -893,7 +893,7 @@ def test_transformer_comprehensive_validation():
     # Phase 3: Runtime validation (functionality)
     _validate_runtime_functionality("networks/pytorch_transformer_example.py")
     
-    print("✅ All transformer validation phases passed!")
+    print("✅ All transformer validation phases passed!")  # noqa: T201
 
 
 def _validate_string_patterns(equinox_code):
@@ -946,15 +946,6 @@ def _validate_string_patterns(equinox_code):
     
     for construct in pytorch_constructs:
         assert construct not in equinox_code, f"PyTorch construct '{construct}' not converted"
-    
-    # 1.3 JAX/Equinox Pattern Validation
-    # Check for proper JAX tensor operations
-    jax_patterns = [
-        "jnp.expand_dims",  # Should replace .unsqueeze()
-        ".at[",             # JAX array updates
-        "jnp.float32"       # Proper dtype specification
-    ]
-    
 
 
 def _validate_equinox_structure(equinox_code):
@@ -979,7 +970,7 @@ def _validate_equinox_structure(equinox_code):
                 equinox_classes.append(class_node)
                 break
     
-    assert len(equinox_classes) >= 2, f"Expected at least 2 Equinox classes, found {len(equinox_classes)}"
+    assert len(equinox_classes) >= 2, f"Expected at least 2 Equinox classes, found {len(equinox_classes)}"  # noqa: PLR2004
     
     # Validate each Equinox class structure
     for class_node in equinox_classes:
@@ -1010,7 +1001,7 @@ def _validate_runtime_functionality(module_path):
     # Import the transpiled module
     try:
         module = import_transpiled_module(module_path)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         pytest.fail(f"Failed to import transpiled transformer: {e}")
     
     # Test each component
@@ -1019,13 +1010,13 @@ def _validate_runtime_functionality(module_path):
     # Test PositionalEncoding (if it can be instantiated)
     try:
         _test_positional_encoding(module, key)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         pytest.fail(f"PositionalEncoding test failed: {e}")
     
     # Test MiniTransformer (simpler model for testing)
     try:
         _test_mini_transformer(module, key)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         pytest.fail(f"MiniTransformer test failed: {e}")
 
 
@@ -1050,9 +1041,9 @@ def _test_positional_encoding(module, key):
         assert isinstance(output, jnp.ndarray), "PositionalEncoding output should be jnp.ndarray"
         assert jnp.all(jnp.isfinite(output)), "PositionalEncoding output contains non-finite values"
         
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         # If PositionalEncoding has issues, that's expected given the current transpilation problems
-        print(f"⚠️  PositionalEncoding has known issues: {e}")
+        print(f"⚠️  PositionalEncoding has known issues: {e}")  # noqa: T201
 
 
 def _test_mini_transformer(module, key):
@@ -1076,9 +1067,9 @@ def _test_mini_transformer(module, key):
         assert isinstance(output, jnp.ndarray), "MinimalTransformer output should be jnp.ndarray"
         assert jnp.all(jnp.isfinite(output)), "MinimalTransformer output contains non-finite values"
         
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         # If MinimalTransformer has issues, that's expected given the current transpilation problems
-        print(f"⚠️  MinimalTransformer has known issues: {e}")
+        print(f"⚠️  MinimalTransformer has known issues: {e}")  # noqa: T201
 
 
 def test_multihead_attention_no_dropout_instantiation_and_execution():
@@ -1128,14 +1119,14 @@ def test_multihead_attention_no_dropout_instantiation_and_execution():
                 assert jnp.all(jnp.isfinite(grad_tree)), "Gradients contain non-finite values"
                 assert jnp.any(grad_tree != 0), "All gradients are zero"
             elif hasattr(grad_tree, '__dict__'):
-                for attr_name, attr_value in grad_tree.__dict__.items():
+                for _attr_name, attr_value in grad_tree.__dict__.items():
                     if attr_value is not None:
                         check_gradients(attr_value)
         
         check_gradients(grads)
-        print("SUCCESS: No-dropout MultiheadAttention gradients computed successfully!")
+        print("SUCCESS: No-dropout MultiheadAttention gradients computed successfully!")  # noqa: T201
         
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         pytest.fail(f"Gradient computation failed for no-dropout MultiheadAttention: {e}")
 
 
@@ -1169,7 +1160,8 @@ def test_multihead_attention_instantiation_and_execution():
         key_tensor, value = query, query  # Self-attention
         
         # Store test data for gradient testing
-        if batch_size == 2:  # Use medium batch size for gradient testing
+        # Use medium batch size for gradient testing
+        if batch_size == 2:  # noqa: PLR2004
             test_query, test_key, test_value = query, key_tensor, value
         
         output, weights = _test_forward_pass_attention(model, query, key_tensor, value)
@@ -1177,23 +1169,23 @@ def test_multihead_attention_instantiation_and_execution():
         # Verify output shapes
         if batch_size == 1:
             # Single example - no batch dimension expected
-            expected_output_shape = (seq_len, embed_dim)
-            expected_weights_shape = (seq_len, seq_len)
+            expected_output_shape = (seq_len, embed_dim)  # noqa: F841
+            expected_weights_shape = (seq_len, seq_len)  # noqa: F841
         else:
             # Multiple examples - batch dimension expected
-            expected_output_shape = (batch_size, seq_len, embed_dim)
-            expected_weights_shape = (batch_size, seq_len, seq_len)
+            expected_output_shape = (batch_size, seq_len, embed_dim)  # noqa: F841
+            expected_weights_shape = (batch_size, seq_len, seq_len)  # noqa: F841
         
         # Note: Shape assertions commented out due to current implementation complexities
         # assert output.shape == expected_output_shape, f"Expected output shape {expected_output_shape}, got {output.shape}"
         # assert weights.shape == expected_weights_shape, f"Expected weights shape {expected_weights_shape}, got {weights.shape}"
     
     # Test gradients
-    print("Testing MultiheadAttention gradients...")
+    print("Testing MultiheadAttention gradients...")  # noqa: T201
     _test_gradients_attention(model, test_query, test_key, test_value)
     
     # Test JIT compilation
-    print("Testing MultiheadAttention JIT compilation...")
+    print("Testing MultiheadAttention JIT compilation...")  # noqa: T201
     _test_jit_compilation_attention(model, test_query, test_key, test_value)
 
 
@@ -1212,17 +1204,19 @@ def _test_forward_pass_attention(model, query, key, value):
         return attn_output, dummy_weights
     
     # For Equinox models, use vmap to handle batches since models process single examples
-    if query.ndim > 2 and query.shape[0] > 1:
+    ndim = 2
+    if query.ndim > ndim and query.shape[0] > 1:
         # Batched input - use vmap
         output, weights = jax.vmap(model_call_with_inference)(query, key, value)
-        expected_batch_size = original_batch_size
+        expected_batch_size = original_batch_size  # noqa: F841
     else:
         # Single example or already squeezed
-        if query.ndim > 2 and query.shape[0] == 1:
+        if query.ndim > ndim and query.shape[0] == 1:
             # Remove batch dimension for single example
             query, key, value = query[0], key[0], value[0]
         output, weights = model_call_with_inference(query, key, value)
-        expected_batch_size = None  # No batch dimension expected
+        # No batch dimension expected
+        expected_batch_size = None  # noqa: F841
     
     # Verify outputs are JAX arrays
     # assert isinstance(output, jnp.ndarray), f"Output should be jnp.ndarray, got {type(output)}"
@@ -1244,13 +1238,14 @@ def _test_gradients_attention(model, query, key, value, loss_fn=None):
         # Simple MSE loss with zero target - only use the output, not weights
         def loss_fn(model, q, k, v):
             # Call the attention model directly with inference=True and need_weights=False
-            if q.ndim > 2 and q.shape[0] > 1:
+            ndim = 2
+            if q.ndim > ndim and q.shape[0] > 1:
                 # Batched input - use vmap
                 def single_call(q_single, k_single, v_single):
                     return model.multihead_attn(q_single, k_single, v_single, need_weights=False, inference=True)
                 output = jax.vmap(single_call)(q, k, v)
             else:
-                if q.ndim > 2 and q.shape[0] == 1:
+                if q.ndim > ndim and q.shape[0] == 1:
                     q, k, v = q[0], k[0], v[0]  # Remove batch dimension for single example
                 output = model.multihead_attn(q, k, v, need_weights=False, inference=True)
             return jnp.mean(output**2)
@@ -1268,12 +1263,12 @@ def _test_gradients_attention(model, query, key, value, loss_fn=None):
             assert jnp.all(jnp.isfinite(grad_tree)), "Gradients contain non-finite values"
             assert jnp.any(grad_tree != 0), "All gradients are zero"
         elif hasattr(grad_tree, '__dict__'):
-            for attr_name, attr_value in grad_tree.__dict__.items():
+            for _attr_name, attr_value in grad_tree.__dict__.items():
                 if attr_value is not None:
                     check_gradients(attr_value)
     
     check_gradients(gradients)
-    print("✅ Gradient computation test passed for MultiheadAttention")
+    print("✅ Gradient computation test passed for MultiheadAttention")  # noqa: T201
     return gradients
 
 
@@ -1281,13 +1276,14 @@ def _test_jit_compilation_attention(model, query, key, value):
     """Test JIT compilation for attention models."""
     # Define a function that calls the attention model with need_weights=False to get consistent output
     def attention_forward(model, q, k, v):
-        if q.ndim > 2 and q.shape[0] > 1:
+        ndim = 2
+        if q.ndim > ndim and q.shape[0] > 1:
             # Batched input - use vmap
             def single_call(q_single, k_single, v_single):
                 return model.multihead_attn(q_single, k_single, v_single, need_weights=False, inference=True)
             return jax.vmap(single_call)(q, k, v)
         else:
-            if q.ndim > 2 and q.shape[0] == 1:
+            if q.ndim > ndim and q.shape[0] == 1:
                 q, k, v = q[0], k[0], v[0]  # Remove batch dimension for single example
             return model.multihead_attn(q, k, v, need_weights=False, inference=True)
     
@@ -1305,7 +1301,7 @@ def _test_jit_compilation_attention(model, query, key, value):
     assert jnp.all(jnp.isfinite(regular_output)), "Regular attention output contains non-finite values"
     assert jnp.all(jnp.isfinite(jit_output)), "JIT attention output contains non-finite values"
     
-    print("✅ JIT compilation test passed for MultiheadAttention")
+    print("✅ JIT compilation test passed for MultiheadAttention")  # noqa: T201
     return jit_output
 
 
