@@ -95,7 +95,7 @@ SIMPLE_MODULE_CONFIGS: dict[str, SimpleModuleConfig] = {
 # COMPLEX MODULE TRANSFORMERS - For modules requiring custom logic
 # ============================================================================
 
-CUSTOM_MODULE_TRANSFORMERS: dict[str, Callable[[ast.Call, int], tuple[ast.Call, ast.AST]]] = {
+CUSTOM_MODULE_TRANSFORMERS: dict[str, Callable[[ast.Call, int], tuple[ast.expr, ast.AST]]] = {
     "MultiheadAttention": lambda node, key_counter: transform_multihead_attention(node, key_counter),
     "RNN": lambda node, key_counter: transform_rnn_module(node, key_counter),
     "Parameter": lambda node, key_counter: transform_parameter(node, key_counter),
@@ -222,9 +222,9 @@ def transform_rnn_module(node: ast.Call, key_counter: int) -> tuple[ast.Call, as
     return transformed_node, type_annotation
 
 
-def transform_parameter(node: ast.Call, key_counter: int) -> tuple[ast.Call, ast.AST]:
+def transform_parameter(node: ast.Call, key_counter: int) -> tuple[ast.Call | ast.expr, ast.AST]:
     """Transform nn.Parameter to jnp.ndarray with proper tensor creation."""
-    transformed_node: ast.Call | ast.Expr
+    transformed_node: ast.Call | ast.expr
     if node.args and len(node.args) > 0:
         inner_call = node.args[0]  # Extract inner tensor creation (e.g., torch.randn(...))
         
@@ -335,7 +335,7 @@ def transform_module_list(node: ast.Call, key_counter: int) -> tuple[ast.Call, a
     return transformed_node, type_annotation
 
 
-def transform_relu(node: ast.Call, key_counter: int) -> tuple[ast.Attribute, ast.Attribute]:
+def transform_relu(node: ast.Call, key_counter: int) -> tuple[ast.Attribute, ast.AST]:
     """Transform nn.ReLU to jax.nn.relu function reference for Sequential.
     
     In Equinox Sequential, activation functions should be passed as functions,

@@ -199,7 +199,7 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
 
         return [node]
 
-    def visit_Call(self, node: ast.Call) -> ast.Call | ast.Tuple:  # noqa: N802
+    def visit_Call(self, node: ast.Call) -> ast.expr | ast.Tuple:  # noqa: N802
         """Using visitor pattern here now. nested calls are just handled recursively."""
         # First, recursively transform any nested calls
         node = self.generic_visit(node)  # type: ignore[assignment]
@@ -351,10 +351,10 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
             # Use the type annotation provided by the converter if available
             annotation_node: ast.expr
             if param_body["type_annotation"] is not None:
-                annotation_node = param_body["type_annotation"]  # type: ignore[attr-defined]
+                annotation_node = param_body["type_annotation"]  # type: ignore[assignment]
             else:
                 # Fallback to auto-transpiled module name for custom modules
-                annotation_node = ast.Name(id=param_body["type"], ctx=ast.Load())
+                annotation_node = ast.Name(id=param_body["type"], ctx=ast.Load())  # type: ignore[arg-type]
 
             annotation = ast.AnnAssign(
                 target=ast.Name(id=name, ctx=ast.Store()),
@@ -537,7 +537,7 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
         return transform_functional_call(node, module_name, func_name)
 
     @staticmethod
-    def _transform_method_call(node: ast.Call) -> ast.Call:
+    def _transform_method_call(node: ast.Call) -> ast.expr:
         """Transform x.method() calls using modular converters."""
         method_name = get_method_name(node)
         if method_name:

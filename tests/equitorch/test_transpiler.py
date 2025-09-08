@@ -315,7 +315,6 @@ class TestPyTorchToEquinoxTransformer:
         for name, param_body in current_class_params.items():
             assert name in names
             assert isinstance(param_body["type"], str)
-            print(ast.dump(param_body["call_node"], indent=4))
             assert isinstance(param_body["call_node"], ast.Call)
             assert isinstance(param_body["call_node"].func, ast.Attribute)
             assert param_body["call_node"].func.attr == param_body["type"]
@@ -343,7 +342,7 @@ class TestPyTorchToEquinoxTransformer:
         for annotation in class_def.body:
             if isinstance(annotation, ast.AnnAssign):
                 assert annotation.target.id in current_class_params  # type: ignore[union-attr]
-                annotation_info: dict[str, str | ast.Call] = current_class_params[annotation.target.id]  # type: ignore[union-attr]
+                annotation_info: dict[str, str | ast.AST | None] = current_class_params[annotation.target.id]  # type: ignore[union-attr]
                 num_annotations += 1
                 assert isinstance(annotation.annotation, ast.Attribute)
                 assert annotation.annotation.attr == annotation_info["type"]
