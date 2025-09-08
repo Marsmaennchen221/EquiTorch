@@ -181,8 +181,8 @@ class TestPyTorchToEquinoxTransformer:
         ],
         ids=["no-method", "other method", "init", "forward", "init and forward"],
     )
-    def test_visit_FunctionDef(  # noqa: N802 FBT001
-        self, pytorch_code: str, init_method: bool, forward_method: bool
+    def test_visit_FunctionDef(  # noqa: N802
+        self, pytorch_code: str, init_method: bool, forward_method: bool  # noqa: FBT001
     ) -> None:
         transformer = PyTorchToEquinoxTransformer()
         tree = ast.parse(pytorch_code)
