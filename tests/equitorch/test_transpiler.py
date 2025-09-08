@@ -79,8 +79,8 @@ class TestPyTorchToEquinoxTransformer:
             ("from torch.nn import Module as M", "M", "torch.nn.Module"),
         ],
     )
-    def test_visit_ImportFrom(
-        self, code: str, expected_import_name: str, expected_import_value: str  # noqa: N802
+    def test_visit_ImportFrom(  # noqa: N802
+        self, code: str, expected_import_name: str, expected_import_value: str
     ) -> None:
         transformer = PyTorchToEquinoxTransformer()
         transformer.visit(ast.parse(code))
@@ -181,8 +181,8 @@ class TestPyTorchToEquinoxTransformer:
         ],
         ids=["no-method", "other method", "init", "forward", "init and forward"],
     )
-    def test_visit_FunctionDef(
-        self, pytorch_code: str, init_method: bool, forward_method: bool  # noqa: N802 FBT001
+    def test_visit_FunctionDef(  # noqa: N802 FBT001
+        self, pytorch_code: str, init_method: bool, forward_method: bool
     ) -> None:
         transformer = PyTorchToEquinoxTransformer()
         tree = ast.parse(pytorch_code)
@@ -212,10 +212,10 @@ class TestPyTorchToEquinoxTransformer:
         ],
         ids=["no call", "module", "functional", "method and functional", "module_init"],
     )
-    def test_visit_Call(
+    def test_visit_Call(  # noqa: N802
         self,
         pytorch_code: str,
-        call_index: list[Literal["module", "functional", "method", "module_init"]],  # noqa: N802
+        call_index: list[Literal["module", "functional", "method", "module_init"]],
     ) -> None:
         transformer = PyTorchToEquinoxTransformer()
         tree = ast.parse(pytorch_code)
