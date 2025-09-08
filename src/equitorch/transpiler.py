@@ -87,7 +87,7 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
     def visit_Module(self, node: ast.Module) -> ast.Module:  # noqa: N802
         """Transform the entire module."""
         for stmt in node.body:
-            if isinstance(stmt, (ast.Import, ast.ImportFrom)):
+            if isinstance(stmt, ast.Import | ast.ImportFrom):
                 self.visit(stmt)
         
         # Add JAX/Equinox imports at the top
@@ -323,18 +323,18 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
                         return ast.Name(id="float", ctx=ast.Load())
                     elif isinstance(value_node.value, str):
                         return ast.Name(id="str", ctx=ast.Load())
-                elif isinstance(value_node, ast.Call):
+                elif (isinstance(value_node, ast.Call) and
+                      isinstance(value_node.func, ast.Attribute) and
+                      isinstance(value_node.func.value, ast.Attribute) and
+                      isinstance(value_node.func.value.value, ast.Name) and
+                      value_node.func.value.value.id == "jax" and
+                      value_node.func.value.attr == "random"):
                     # Handle special cases like jax.random.normal -> jnp.ndarray
-                    if (isinstance(value_node.func, ast.Attribute) and
-                        isinstance(value_node.func.value, ast.Attribute) and
-                        isinstance(value_node.func.value.value, ast.Name) and
-                        value_node.func.value.value.id == "jax" and
-                        value_node.func.value.attr == "random"):
-                        return ast.Attribute(
-                            value=ast.Name(id="jnp", ctx=ast.Load()),
-                            attr="ndarray",
-                            ctx=ast.Load()
-                        )
+                    return ast.Attribute(
+                        value=ast.Name(id="jnp", ctx=ast.Load()),
+                        attr="ndarray",
+                        ctx=ast.Load()
+                    )
                 
                 # Default fallback
                 return ast.Name(id="object", ctx=ast.Load())
@@ -551,7 +551,7 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
     def _is_rnn_module_call(module_name: str, current_class_params: dict[str, dict[str, str | ast.AST | None]]) -> bool:
         """Check if this is a call to an RNN-like module that needs scan."""
         # Extended RNN type mapping
-        RNN_MODULE_TYPES = {"RNN", "LSTM", "GRU", "RNNCell", "LSTMCell", "GRUCell"}
+        RNN_MODULE_TYPES = {"RNN", "LSTM", "GRU", "RNNCell", "LSTMCell", "GRUCell"}  # noqa: N806
 
         # Check if the module is an RNN type based on our parameter tracking
         return module_name in current_class_params and current_class_params[module_name]["type"] in RNN_MODULE_TYPES
@@ -570,7 +570,7 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
         # So we should NOT use vmap for any modules inside the model
 
         # Built-in PyTorch modules that are converted to Equinox
-        BATCH_NATIVE_MODULES = {
+        BATCH_NATIVE_MODULES = {  # noqa: N806
             "Linear", "Conv1d", "Conv2d", "Conv3d", "ConvTranspose1d",
             "ConvTranspose2d", "ConvTranspose3d", "BatchNorm1d", "BatchNorm2d",
             "BatchNorm3d", "LayerNorm", "GroupNorm", "Dropout", "Embedding",
@@ -586,11 +586,7 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
         # If the module_type is not in our known PyTorch modules, it's likely a custom class
         from .converters.module_converters import get_supported_modules
         supported_modules = get_supported_modules()
-        if module_type not in supported_modules:
-            # This is a custom class, treat it as batch-native (no vmap needed)
-            return True
-
-        return False
+        return module_type not in supported_modules  # This is a custom class, treat it as batch-native (no vmap needed)
 
     @staticmethod
     def _get_rnn_type(module_name: str, current_class_params: dict[str, dict[str, str | ast.AST | None]]) -> str:
@@ -598,7 +594,7 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
         return current_class_params[module_name]["type"] if module_name in current_class_params else "RNN"  # type: ignore[return-value]
 
     @staticmethod
-    def _create_rnn_scan_function(rnn_type: str, module_name: str) -> ast.Lambda:
+    def _create_rnn_scan_function(rnn_type: str, module_name: str) -> ast.Lambda:  # noqa: ARG004
         """Create proper scan function based on RNN type."""
 
         # Create a single RNN call that we'll reuse
@@ -679,7 +675,8 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
         )
 
         # Handle initial hidden state
-        if len(node.args) >= 2:
+        len_node_args = 2
+        if len(node.args) >= len_node_args:
             init_carry = node.args[1]
             # Remove the first dimension (num_layers=1) and transpose
             init_carry = ast.Subscript(
@@ -781,7 +778,7 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
             def __init__(self):
                 self.found_super = False
 
-            def visit_Call(self, node):
+            def visit_Call(self, node):  # noqa: N802
                 if (isinstance(node.func, ast.Name) and node.func.id == "super"):
                     self.found_super = True
                 self.generic_visit(node)  # Continue searching in child nodes
@@ -797,7 +794,7 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
             def __init__(self):
                 self.found_subkey = False
 
-            def visit_Name(self, node):
+            def visit_Name(self, node):  # noqa: N802
                 if node.id == "subkey":
                     self.found_subkey = True
 
@@ -872,34 +869,33 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
         This handles cases like dtype=torch.float -> dtype=jnp.float32
         """
         for keyword in node.keywords:
-            if keyword.value and isinstance(keyword.value, ast.Attribute):
-                # Check for torch.dtype patterns
-                if (isinstance(keyword.value.value, ast.Name) and
-                    keyword.value.value.id == "torch"):
-                    attr_name = keyword.value.attr
-                    # Use functional mappings to convert torch.float -> jnp.float32
-                    from .converters.functional_converters import FUNCTIONAL_MAPPINGS
-                    mapping_key = ("torch", attr_name)
-                    if mapping_key in FUNCTIONAL_MAPPINGS:
-                        new_module, new_attr = FUNCTIONAL_MAPPINGS[mapping_key]
-                        # Create new attribute reference
-                        if "." in new_module:
-                            module_parts = new_module.split(".")
-                            keyword.value = ast.Attribute(
-                                value=ast.Attribute(
-                                    value=ast.Name(id=module_parts[0], ctx=ast.Load()),
-                                    attr=module_parts[1],
-                                    ctx=ast.Load(),
-                                ),
-                                attr=new_attr,
-                                ctx=ast.Load(),
-                            )
-                        else:
-                            keyword.value = ast.Attribute(
-                                value=ast.Name(id=new_module, ctx=ast.Load()),
-                                attr=new_attr,
-                                ctx=ast.Load(),
-                            )
+            from .converters.functional_converters import FUNCTIONAL_MAPPINGS
+            # Check for torch.dtype patterns
+            # Use functional mappings to convert torch.float -> jnp.float32
+            if (keyword.value and isinstance(keyword.value, ast.Attribute) and
+                    isinstance(keyword.value.value, ast.Name) and
+                    keyword.value.value.id == "torch" and
+                    ("torch", keyword.value.attr) in FUNCTIONAL_MAPPINGS):
+                mapping_key = ("torch", keyword.value.attr)
+                new_module, new_attr = FUNCTIONAL_MAPPINGS[mapping_key]
+                # Create new attribute reference
+                if "." in new_module:
+                    module_parts = new_module.split(".")
+                    keyword.value = ast.Attribute(
+                        value=ast.Attribute(
+                            value=ast.Name(id=module_parts[0], ctx=ast.Load()),
+                            attr=module_parts[1],
+                            ctx=ast.Load(),
+                        ),
+                        attr=new_attr,
+                        ctx=ast.Load(),
+                    )
+                else:
+                    keyword.value = ast.Attribute(
+                        value=ast.Name(id=new_module, ctx=ast.Load()),
+                        attr=new_attr,
+                        ctx=ast.Load(),
+                    )
         return node
 
     def _get_required_class_definitions(self) -> list[ast.stmt]:
@@ -915,7 +911,7 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
         # Get custom implementations for PyTorch modules that need them
         custom_implementations = get_required_custom_implementations(self.required_class_definitions)
 
-        for custom_name, definition in custom_implementations.items():
+        for _, definition in custom_implementations.items():
             class_code = definition.strip()
             class_ast = ast.parse(class_code)
             class_definitions.extend(class_ast.body)
@@ -929,7 +925,7 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
                     class_def_str, _ = auto_transpile_module(pytorch_module)
                     class_ast = ast.parse(class_def_str)
                     class_definitions.extend(class_ast.body)
-                except Exception:
+                except Exception:  # noqa: BLE001
                     # If auto-transpilation fails, skip this class
                     pass
 

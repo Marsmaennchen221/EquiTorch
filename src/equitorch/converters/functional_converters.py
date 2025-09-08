@@ -112,7 +112,7 @@ def transform_simple_functional(node: ast.Call, new_module: str, new_func: str) 
     )
 
 
-def transform_max_pool(node: ast.Call, new_module: str, new_func: str, func_name: str) -> ast.Call | ast.expr:
+def transform_max_pool(node: ast.Call, new_module: str, new_func: str, func_name: str) -> ast.Call | ast.expr:  # noqa: ARG001
     """Transform max_pool with proper parameter mapping using jax.scipy.signal.pool.
     
     Args:
@@ -124,7 +124,8 @@ def transform_max_pool(node: ast.Call, new_module: str, new_func: str, func_name
     Returns:
         Transformed AST Call node using jax.scipy.signal.pool
     """
-    if len(node.args) < 2:
+    invalid_args_len = 2
+    if len(node.args) < invalid_args_len:
         return node  # Invalid call
     
     try:
@@ -137,11 +138,16 @@ def transform_max_pool(node: ast.Call, new_module: str, new_func: str, func_name
         kernel_str = ast.unparse(kernel_size)
         
         # Extract stride if provided, otherwise default to kernel_size
-        if len(node.args) > 2:
+        if len(node.args) > invalid_args_len:
             stride_str = ast.unparse(node.args[2])
         else:
             stride_str = kernel_str
         
+    except RecursionError:
+        # Fallback to original node if anything goes wrong
+        return node
+
+    else:
         # Build target code string using jax.lax.reduce_window
         # For Equinox single-example processing with 3D tensors (channels, height, width),
         # use 3D window dimensions: (1, kernel_size, kernel_size)
@@ -153,14 +159,10 @@ def transform_max_pool(node: ast.Call, new_module: str, new_func: str, func_name
             (1, {stride_str}, {stride_str}),
             'VALID'
         )"""
-        
+
         # Parse back to AST and return the expression
         parsed = ast.parse(target_code, mode='eval')
         return parsed.body
-        
-    except Exception:
-        # Fallback to original node if anything goes wrong
-        return node
 
 
 def transform_torch_flatten(node: ast.Call) -> ast.Call:
@@ -278,7 +280,8 @@ def transform_torch_randint(node: ast.Call) -> ast.Call:
     Returns:
         Transformed AST Call node for jax.random.randint
     """
-    if len(node.args) < 3:
+    invalid_args_len = 3
+    if len(node.args) < invalid_args_len:
         return node  # Invalid call
     
     low = node.args[0]
@@ -318,14 +321,15 @@ def transform_linear(node: ast.Call) -> ast.Call | ast.expr:
     Returns:
         Transformed AST Call node
     """
-    if len(node.args) < 2:
+    invalid_args_len = 2
+    if len(node.args) < invalid_args_len:
         return node  # Invalid call, return unchanged
     
     try:
         # Extract arguments
         input_tensor = node.args[0]
         weight = node.args[1]
-        bias = node.args[2] if len(node.args) > 2 else None
+        bias = node.args[2] if len(node.args) > invalid_args_len else None
         
         # Convert AST nodes to code strings
         input_str = ast.unparse(input_tensor)
@@ -338,14 +342,14 @@ def transform_linear(node: ast.Call) -> ast.Call | ast.expr:
         else:
             target_code = f"jnp.dot({input_str}, {weight_str}.T)"
         
-        # Parse back to AST and return the expression
-        parsed = ast.parse(target_code, mode='eval')
-        return parsed.body
-        
-    except Exception:
+    except RecursionError:
         # Fallback to original node if anything goes wrong
         return node
 
+    else:
+        # Parse back to AST and return the expression
+        parsed = ast.parse(target_code, mode='eval')
+        return parsed.body
 
 
 def transform_layer_norm(node: ast.Call) -> ast.Call:

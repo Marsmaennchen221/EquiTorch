@@ -154,7 +154,7 @@ CUSTOM_IMPLEMENTATIONS: dict[str, str] = {
 # TRANSFORMATION FUNCTIONS - Individual transformers for complex modules
 # ============================================================================
 
-def transform_multihead_attention(node: ast.Call, key_counter: int) -> tuple[ast.Call, ast.AST]:
+def transform_multihead_attention(node: ast.Call, key_counter: int) -> tuple[ast.Call, ast.AST]:  # noqa: ARG001
     """Transform MultiheadAttention to use custom libEquitorch implementation."""
     
     # Extract arguments and keywords from PyTorch call
@@ -194,7 +194,7 @@ def transform_multihead_attention(node: ast.Call, key_counter: int) -> tuple[ast
     return transformed_node, type_annotation
 
 
-def transform_rnn_module(node: ast.Call, key_counter: int) -> tuple[ast.Call, ast.AST]:
+def transform_rnn_module(node: ast.Call, key_counter: int) -> tuple[ast.Call, ast.AST]:  # noqa: ARG001
     """Transform RNN module to ElmanRNNCell with proper parameter filtering."""
     # Filter out PyTorch-specific parameters
     filtered_keywords = []
@@ -208,7 +208,8 @@ def transform_rnn_module(node: ast.Call, key_counter: int) -> tuple[ast.Call, as
     filtered_keywords.append(ast.keyword(arg="key", value=ast.Name(id="subkey", ctx=ast.Load())))
     
     # Select only input_size and hidden_size arguments
-    args = node.args[:2] if len(node.args) >= 2 else node.args
+    node_arg_len = 2
+    args = node.args[:2] if len(node.args) >= node_arg_len else node.args
     
     # Create ElmanRNNCell call
     transformed_node = ast.Call(
@@ -222,7 +223,7 @@ def transform_rnn_module(node: ast.Call, key_counter: int) -> tuple[ast.Call, as
     return transformed_node, type_annotation
 
 
-def transform_parameter(node: ast.Call, key_counter: int) -> tuple[ast.Call | ast.expr, ast.AST]:
+def transform_parameter(node: ast.Call, key_counter: int) -> tuple[ast.Call | ast.expr, ast.AST]:  # noqa: ARG001
     """Transform nn.Parameter to jnp.ndarray with proper tensor creation."""
     transformed_node: ast.Call | ast.expr
     if node.args and len(node.args) > 0:
@@ -277,7 +278,7 @@ def transform_parameter(node: ast.Call, key_counter: int) -> tuple[ast.Call | as
     return transformed_node, type_annotation
 
 
-def transform_sequential(node: ast.Call, key_counter: int) -> tuple[ast.Call, ast.AST]:
+def transform_sequential(node: ast.Call, key_counter: int) -> tuple[ast.Call, ast.AST]:  # noqa: ARG001
     """Transform nn.Sequential to eqx.nn.Sequential.
     
     Equinox Sequential expects a list of layers, not individual arguments.
@@ -317,7 +318,7 @@ def transform_sequential(node: ast.Call, key_counter: int) -> tuple[ast.Call, as
     return transformed_node, type_annotation
 
 
-def transform_module_list(node: ast.Call, key_counter: int) -> tuple[ast.Call, ast.AST]:
+def transform_module_list(node: ast.Call, key_counter: int) -> tuple[ast.Call, ast.AST]:  # noqa: ARG001
     """Transform nn.ModuleList to a simple list of modules."""
     # For now, just pass through the arguments and add key parameter
     keywords = list(node.keywords)
@@ -335,7 +336,7 @@ def transform_module_list(node: ast.Call, key_counter: int) -> tuple[ast.Call, a
     return transformed_node, type_annotation
 
 
-def transform_relu(node: ast.Call, key_counter: int) -> tuple[ast.Attribute, ast.AST]:
+def transform_relu(node: ast.Call, key_counter: int) -> tuple[ast.Attribute, ast.AST]:  # noqa: ARG001
     """Transform nn.ReLU to jax.nn.relu function reference for Sequential.
     
     In Equinox Sequential, activation functions should be passed as functions,
@@ -366,7 +367,7 @@ def transform_relu(node: ast.Call, key_counter: int) -> tuple[ast.Attribute, ast
     return transformed_node, type_annotation
 
 
-def transform_dropout(node: ast.Call, key_counter: int) -> tuple[ast.Call, ast.AST]:
+def transform_dropout(node: ast.Call, key_counter: int) -> tuple[ast.Call, ast.AST]:  # noqa: ARG001
     """Transform nn.Dropout to eqx.nn.Dropout without key parameter.
     
     Equinox Dropout doesn't take a key parameter.
@@ -418,7 +419,7 @@ def _create_module_reference_ast(module_path: str) -> ast.expr:
     return result
 
 
-def transform_simple_module(node: ast.Call, module_name: str, key_counter: int) -> tuple[ast.Call, ast.AST]:
+def transform_simple_module(node: ast.Call, module_name: str, key_counter: int) -> tuple[ast.Call, ast.AST]:  # noqa: ARG001
     """Transform a simple module using configuration."""
     config = SIMPLE_MODULE_CONFIGS.get(module_name)
     if not config:
@@ -487,7 +488,7 @@ def auto_transpile_module(module_name: str) -> tuple[str, str]:
         source = inspect.getsource(pytorch_class)
         
         # Import the transpiler (avoid circular import)
-        from ..transpiler import transpile
+        from equitorch.transpiler import transpile
         
         # Recursively transpile the PyTorch source
         equinox_code = transpile(source)
@@ -498,10 +499,10 @@ def auto_transpile_module(module_name: str) -> tuple[str, str]:
         # Cache the result
         _AUTO_TRANSPILED_CACHE[module_name] = (class_def, type_annotation)
         
-        return class_def, type_annotation
-        
     except Exception as e:
         raise ValueError(f"Failed to auto-transpile {module_name}: {e}") from e
+    else:
+        return class_def, type_annotation
 
 
 def extract_class_info(transpiled_code: str, original_name: str) -> tuple[str, str]:
@@ -529,7 +530,7 @@ def extract_class_info(transpiled_code: str, original_name: str) -> tuple[str, s
     return transpiled_code, original_name
 
 
-def transform_auto_transpiled_module(node: ast.Call, module_name: str, key_counter: int) -> tuple[ast.Call, ast.AST]:
+def transform_auto_transpiled_module(node: ast.Call, module_name: str, key_counter: int) -> tuple[ast.Call, ast.AST]:  # noqa: ARG001
     """Transform a module using auto-transpilation."""
     # Get the auto-transpiled class info
     class_def, type_annotation = auto_transpile_module(module_name)
@@ -566,16 +567,16 @@ def _can_auto_transpile(module_name: str) -> bool:
         
         # Check if we can get source code
         inspect.getsource(pytorch_class)
-        return True
     except (AttributeError, OSError, TypeError):
         return False
+    return True
 
 
 # ============================================================================
 # PUBLIC INTERFACE - Main entry points
 # ============================================================================
 
-def transform_module_call(node: ast.Call, module_name: str, key_counter: int) -> tuple[ast.Call, ast.AST]:
+def transform_module_call(node: ast.Call, module_name: str, key_counter: int) -> tuple[ast.expr, ast.AST]:
     """Transform a PyTorch module call to its Equinox equivalent.
     
     This is the main entry point that follows the same pattern as transform_functional_call.
@@ -611,7 +612,7 @@ def transform_module_call(node: ast.Call, module_name: str, key_counter: int) ->
         raise KeyError(f"No converter available for module {module_name} and auto-transpilation failed: {e}") from e
 
 
-def get_module_converter(module_name: str) -> Callable[[ast.Call, int], tuple[ast.Call, ast.AST]]:
+def get_module_converter(module_name: str) -> Callable[[ast.Call, int], tuple[ast.expr, ast.AST]]:
     """Get the converter function for a given PyTorch module name.
     
     Maintained for backward compatibility with existing transpiler code.
@@ -625,7 +626,7 @@ def get_module_converter(module_name: str) -> Callable[[ast.Call, int], tuple[as
     Raises:
         KeyError: If no converter exists and auto-transpilation fails
     """
-    def converter(node: ast.Call, key_counter: int) -> tuple[ast.Call, ast.AST]:
+    def converter(node: ast.Call, key_counter: int) -> tuple[ast.expr, ast.AST]:
         return transform_module_call(node, module_name, key_counter)
     
     return converter

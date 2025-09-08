@@ -72,7 +72,7 @@ def write_transpiled_code(transpiled_code: str, test_id: str) -> None:
     
     # Write the transpiled code to the file
     output_path.write_text(transpiled_code, encoding="utf-8")
-    print(f"Transpiled code written to: {output_path}")
+    print(f"Transpiled code written to: {output_path}")  # noqa: T201
 
 
 def _compare_ast_recursive(tree1: Any, tree2: Any) -> bool:

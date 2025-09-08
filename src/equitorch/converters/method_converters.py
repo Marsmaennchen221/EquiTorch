@@ -41,28 +41,32 @@ def transform_method_call(node: ast.Call, method_name: str) -> ast.Call | ast.At
     """
     if method_name not in SUPPORTED_METHODS:
         return node  # Return unchanged if method not supported
-    
-    if method_name in ["view", "reshape"]:
-        return transform_reshape(node)
-    if method_name == "flatten":
-        return transform_tensor_flatten(node)
-    if method_name == "size":
-        return transform_size(node)
-    if method_name == "unsqueeze":
-        return transform_unsqueeze(node)
-    if method_name == "transpose":
-        return transform_transpose(node)
-    if method_name == "float":
-        return transform_dtype_cast(node, "jnp.float32")
-    if method_name == "int":
-        return transform_dtype_cast(node, "jnp.int32")
-    if method_name == "bool":
-        return transform_dtype_cast(node, "jnp.bool_")
-    if method_name == "long":
-        return transform_dtype_cast(node, "jnp.int64")
-    if method_name == "double":
-        return transform_dtype_cast(node, "jnp.float64")
-    return node
+
+    result: ast.Call | ast.Attribute | ast.Subscript
+    match method_name:
+        case "view" | "reshape":
+            result = transform_reshape(node)
+        case "flatten":
+            result = transform_tensor_flatten(node)
+        case "size":
+            result = transform_size(node)
+        case "unsqueeze":
+            result = transform_unsqueeze(node)
+        case "transpose":
+            result = transform_transpose(node)
+        case "float":
+            result = transform_dtype_cast(node, "jnp.float32")
+        case "int":
+            result = transform_dtype_cast(node, "jnp.int32")
+        case "bool":
+            result = transform_dtype_cast(node, "jnp.bool_")
+        case "long":
+            result = transform_dtype_cast(node, "jnp.int64")
+        case "double":
+            result = transform_dtype_cast(node, "jnp.float64")
+        case _:
+            result = node
+    return result
 
 
 def transform_reshape(node: ast.Call) -> ast.Call:
@@ -84,8 +88,9 @@ def transform_reshape(node: ast.Call) -> ast.Call:
                        isinstance(node.args[1].op, ast.USub) and
                        isinstance(node.args[1].operand, ast.Constant) and
                        node.args[1].operand.value == 1)
-    
-    if (len(node.args) == 2 and is_negative_one):
+
+    node_args_len = 2
+    if (len(node.args) == node_args_len and is_negative_one):
         # This is a flattening operation - use jnp.ravel for single example processing
         return ast.Call(
             func=ast.Attribute(
@@ -206,8 +211,9 @@ def transform_transpose(node: ast.Call) -> ast.Call:
         Transformed AST Call node for jnp.transpose()
     """
     input_tensor = node.func.value  # type: ignore[attr-defined]
-    
-    if node.args and len(node.args) >= 2:
+    node_args_len = 1
+
+    if node.args and len(node.args) > node_args_len:
         # x.transpose(dim0, dim1) -> jnp.transpose(x, axes=(dim0, dim1))
         axes_tuple = ast.Tuple(elts=list(node.args), ctx=ast.Load())
         return ast.Call(
@@ -219,7 +225,7 @@ def transform_transpose(node: ast.Call) -> ast.Call:
             args=[input_tensor],
             keywords=[ast.keyword(arg="axes", value=axes_tuple)],
         )
-    elif node.args and len(node.args) == 1:
+    elif node.args and len(node.args) == node_args_len:
         # x.transpose(dim) -> jnp.swapaxes(x, dim, -1) for single dimension
         dim = node.args[0]
         return ast.Call(
@@ -259,7 +265,8 @@ def transform_dtype_cast(node: ast.Call, target_dtype: str) -> ast.Call:
     # Create the dtype reference (e.g., jnp.float32)
     dtype_parts = target_dtype.split(".")
     dtype_ref: ast.Attribute | ast.Name
-    if len(dtype_parts) == 2:
+    dtype_parts_len = 2
+    if len(dtype_parts) == dtype_parts_len:
         dtype_ref = ast.Attribute(
             value=ast.Name(id=dtype_parts[0], ctx=ast.Load()),
             attr=dtype_parts[1],
@@ -336,7 +343,7 @@ def is_tensor_method_call(node: ast.Call) -> bool:
         return node.func.value.id not in ["self", "F", "torch", "nn", "jax", "jnp", "jr", "eqx", "eqt"]
     
     # Allow method calls on more complex expressions (subscripts, attributes, calls)
-    return isinstance(node.func.value, (ast.Subscript, ast.Attribute, ast.Call))
+    return isinstance(node.func.value, ast.Subscript | ast.Attribute | ast.Call)
 
 
 def get_method_name(node: ast.Call) -> str | None:
