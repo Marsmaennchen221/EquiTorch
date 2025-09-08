@@ -43,7 +43,7 @@ def transform_to_equinox_ast(pytorch_code: str) -> ast.AST:
     ],
 )
 def test_nn_transpilation(
-    resource_path: str | Path, snapshot_equinox_code: SnapshotAssertion, write_transpiled: bool, request  # noqa: FBT001
+    resource_path: str | Path, snapshot_equinox_code: SnapshotAssertion, write_transpiled: bool, request,  # noqa: FBT001
 ) -> None:
     """Test transpilation of PyTorch neural networks to Equinox."""
     # Read PyTorch code
@@ -80,7 +80,7 @@ class TestPyTorchToEquinoxTransformer:
         ],
     )
     def test_visit_ImportFrom(  # noqa: N802
-        self, code: str, expected_import_name: str, expected_import_value: str
+        self, code: str, expected_import_name: str, expected_import_value: str,
     ) -> None:
         transformer = PyTorchToEquinoxTransformer()
         transformer.visit(ast.parse(code))
@@ -182,7 +182,7 @@ class TestPyTorchToEquinoxTransformer:
         ids=["no-method", "other method", "init", "forward", "init and forward"],
     )
     def test_visit_FunctionDef(  # noqa: N802
-        self, pytorch_code: str, init_method: bool, forward_method: bool  # noqa: FBT001
+        self, pytorch_code: str, init_method: bool, forward_method: bool,  # noqa: FBT001
     ) -> None:
         transformer = PyTorchToEquinoxTransformer()
         tree = ast.parse(pytorch_code)
