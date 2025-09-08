@@ -426,8 +426,8 @@ def _create_module_reference_ast(module_path: str) -> ast.expr:
 
 
 def transform_simple_module(
-    node: ast.Call,  # noqa: ARG001
-    module_name: str,  # noqa: ARG001
+    node: ast.Call,
+    module_name: str,
     key_counter: int,  # noqa: ARG001
 ) -> tuple[ast.Call, ast.AST]:
     """Transform a simple module using configuration."""
