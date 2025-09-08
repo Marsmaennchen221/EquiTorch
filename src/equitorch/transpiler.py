@@ -3,6 +3,7 @@
 Replaces the complex manual AST processing with clean, standard patterns
 and uses separated converter modules for better organization.
 """
+
 import ast
 
 from equitorch.converters import (
@@ -29,7 +30,6 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
         self.current_imports = {}
         self.required_class_definitions = set()  # Track classes that need to be injected
 
-
     def visit_ImportFrom(self, node: ast.ImportFrom) -> ast.ImportFrom:  # noqa: N802
         """Save from Imports."""
         node_module: str = node.module if node.module is not None else ""
@@ -55,10 +55,10 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
 
     def _filter_pytorch_imports(self, body: list[ast.stmt]) -> list[ast.stmt]:
         """Filter out PyTorch imports from the module body.
-        
+
         Args:
             body: List of AST statements from module body
-            
+
         Returns:
             Filtered list without PyTorch imports
         """
@@ -89,7 +89,7 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
         for stmt in node.body:
             if isinstance(stmt, ast.Import | ast.ImportFrom):
                 self.visit(stmt)
-        
+
         # Add JAX/Equinox imports at the top
         imports = [
             ast.Import(names=[ast.alias(name="jax", asname=None)]),
@@ -153,7 +153,7 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
             return self._transform_init_method(node)
         if node.name == "forward":
             return self._transform_forward_method(node)
-        
+
         return self.generic_visit(node)  # type: ignore[return-value]
 
     def visit_Assign(self, node: ast.Assign) -> list[ast.Assign]:  # noqa: N802
@@ -168,13 +168,15 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
 
             # Add key splitting: key, subkey = jax.random.split(key)
             key_split = ast.Assign(
-                targets=[ast.Tuple(
-                    elts=[
-                        ast.Name(id="key", ctx=ast.Store()),
-                        ast.Name(id="subkey", ctx=ast.Store()),
-                    ],
-                    ctx=ast.Store(),
-                )],
+                targets=[
+                    ast.Tuple(
+                        elts=[
+                            ast.Name(id="key", ctx=ast.Store()),
+                            ast.Name(id="subkey", ctx=ast.Store()),
+                        ],
+                        ctx=ast.Store(),
+                    )
+                ],
                 value=ast.Call(
                     func=ast.Attribute(
                         value=ast.Attribute(
@@ -229,12 +231,22 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
         """Check if class inherits from torch.nn.Module."""
         for base in node.bases:
             if (
-                    (isinstance(base, ast.Attribute) and base.attr == "Module" and isinstance(base.value, ast.Attribute)
-                     and base.value.attr == "nn" and isinstance(base.value.value, ast.Name)
-                     and self.current_imports[base.value.value.id] == "torch")
-                    or (isinstance(base, ast.Attribute) and base.attr == "Module" and isinstance(base.value, ast.Name)
-                        and self.current_imports[base.value.id] == "torch.nn")
-                    or (isinstance(base, ast.Name) and self.current_imports[base.id] == "torch.nn.Module")):
+                (
+                    isinstance(base, ast.Attribute)
+                    and base.attr == "Module"
+                    and isinstance(base.value, ast.Attribute)
+                    and base.value.attr == "nn"
+                    and isinstance(base.value.value, ast.Name)
+                    and self.current_imports[base.value.value.id] == "torch"
+                )
+                or (
+                    isinstance(base, ast.Attribute)
+                    and base.attr == "Module"
+                    and isinstance(base.value, ast.Name)
+                    and self.current_imports[base.value.id] == "torch.nn"
+                )
+                or (isinstance(base, ast.Name) and self.current_imports[base.id] == "torch.nn.Module")
+            ):
                 return True
         return False
 
@@ -243,12 +255,22 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
         if self._is_pytorch_module(node):
             for index, base in enumerate(node.bases):
                 if (
-                        (isinstance(base, ast.Attribute) and base.attr == "Module" and isinstance(base.value, ast.Attribute)
-                         and base.value.attr == "nn" and isinstance(base.value.value, ast.Name)
-                         and self.current_imports[base.value.value.id] == "torch")
-                        or (isinstance(base, ast.Attribute) and base.attr == "Module" and isinstance(base.value, ast.Name)
-                            and self.current_imports[base.value.id] == "torch.nn")
-                        or (isinstance(base, ast.Name) and self.current_imports[base.id] == "torch.nn.Module")):
+                    (
+                        isinstance(base, ast.Attribute)
+                        and base.attr == "Module"
+                        and isinstance(base.value, ast.Attribute)
+                        and base.value.attr == "nn"
+                        and isinstance(base.value.value, ast.Name)
+                        and self.current_imports[base.value.value.id] == "torch"
+                    )
+                    or (
+                        isinstance(base, ast.Attribute)
+                        and base.attr == "Module"
+                        and isinstance(base.value, ast.Name)
+                        and self.current_imports[base.value.id] == "torch.nn"
+                    )
+                    or (isinstance(base, ast.Name) and self.current_imports[base.id] == "torch.nn.Module")
+                ):
                     return index
         raise ValueError("Class does not inherit from torch.nn.Module")
 
@@ -262,22 +284,25 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
 
     def _extract_parameters(self, init_method: ast.FunctionDef) -> dict[str, dict[str, str | ast.AST | None]]:
         """Extract ALL self.param = ... assignments for type annotations."""
+
         class ParameterExtractor(ast.NodeVisitor):
             def __init__(self) -> None:
                 self.current_class_params: dict[str, dict[str, str | ast.AST | None]] = {}
 
             def visit_Assign(self, node: ast.Assign) -> None:  # noqa: N802
-                if (len(node.targets) == 1 and
-                        isinstance(node.targets[0], ast.Attribute) and
-                        isinstance(node.targets[0].value, ast.Name) and
-                        node.targets[0].value.id == "self"):
+                if (
+                    len(node.targets) == 1
+                    and isinstance(node.targets[0], ast.Attribute)
+                    and isinstance(node.targets[0].value, ast.Name)
+                    and node.targets[0].value.id == "self"
+                ):
                     param_name = node.targets[0].attr
-                    
+
                     if isinstance(node.value, ast.Call):
                         # Handle module calls
                         if PyTorchToEquinoxTransformer._is_pytorch_module_init(node.value):
                             module_type = node.value.func.attr  # type: ignore[attr-defined]
-                            self.current_class_params[param_name] = ({
+                            self.current_class_params[param_name] = {
                                 "type": module_type,
                                 "call_node": node.value,
                                 "transformed_node": None,  # Will be filled during transformation
@@ -290,31 +315,39 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
                                     attr=str(module_type),
                                     ctx=ast.Load(),
                                 ),
-                            })  # Override same name with latest assignment
+                            }  # Override same name with latest assignment
                         elif isinstance(node.value.func, ast.Name):
                             class_name = node.value.func.id
-                            self.current_class_params[param_name] = ({
+                            self.current_class_params[param_name] = {
                                 "type": class_name,
                                 "call_node": node.value,
                                 "transformed_node": None,
                                 "type_annotation": None,  # Will be filled during transformation
-                            })
+                            }
                     else:
                         # Handle non-call assignments (like self.d_model = d_model)
                         # Infer type from the value
                         type_annotation = self._infer_type_annotation(node.value)
-                        self.current_class_params[param_name] = ({
+                        self.current_class_params[param_name] = {
                             "type": "attribute",
                             "call_node": None,
                             "transformed_node": None,
                             "type_annotation": type_annotation,
-                        })
+                        }
 
             def _infer_type_annotation(self, value_node: ast.AST) -> ast.AST:
                 """Infer type annotation from assignment value."""
                 if isinstance(value_node, ast.Name):
                     # For simple variable assignments, assume int for common cases
-                    if value_node.id in ["d_model", "vocab_size", "num_heads", "d_ff", "hidden_size", "input_size", "output_size"]:
+                    if value_node.id in [
+                        "d_model",
+                        "vocab_size",
+                        "num_heads",
+                        "d_ff",
+                        "hidden_size",
+                        "input_size",
+                        "output_size",
+                    ]:
                         return ast.Name(id="int", ctx=ast.Load())
                 elif isinstance(value_node, ast.Constant):
                     if isinstance(value_node.value, int):
@@ -323,19 +356,21 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
                         return ast.Name(id="float", ctx=ast.Load())
                     if isinstance(value_node.value, str):
                         return ast.Name(id="str", ctx=ast.Load())
-                elif (isinstance(value_node, ast.Call) and
-                      isinstance(value_node.func, ast.Attribute) and
-                      isinstance(value_node.func.value, ast.Attribute) and
-                      isinstance(value_node.func.value.value, ast.Name) and
-                      value_node.func.value.value.id == "jax" and
-                      value_node.func.value.attr == "random"):
+                elif (
+                    isinstance(value_node, ast.Call)
+                    and isinstance(value_node.func, ast.Attribute)
+                    and isinstance(value_node.func.value, ast.Attribute)
+                    and isinstance(value_node.func.value.value, ast.Name)
+                    and value_node.func.value.value.id == "jax"
+                    and value_node.func.value.attr == "random"
+                ):
                     # Handle special cases like jax.random.normal -> jnp.ndarray
                     return ast.Attribute(
                         value=ast.Name(id="jnp", ctx=ast.Load()),
                         attr="ndarray",
                         ctx=ast.Load(),
                     )
-                
+
                 # Default fallback
                 return ast.Name(id="object", ctx=ast.Load())
 
@@ -344,7 +379,9 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
         return extractor.current_class_params
 
     @staticmethod
-    def _add_type_annotations(class_node: ast.ClassDef, current_class_params: dict[str, dict[str, str | ast.AST | None]]):
+    def _add_type_annotations(
+        class_node: ast.ClassDef, current_class_params: dict[str, dict[str, str | ast.AST | None]]
+    ):
         """Add type annotations for parameters using type info from converters."""
         annotations = []
         for name, param_body in current_class_params.items():
@@ -422,9 +459,7 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
         key_split = ast.Assign(
             targets=[
                 ast.Tuple(
-                    elts=[
-                        ast.Name(id=f"key_{i}", ctx=ast.Store()) for i in range(self.key_counter)
-                    ],
+                    elts=[ast.Name(id=f"key_{i}", ctx=ast.Store()) for i in range(self.key_counter)],
                 ),
             ],
             value=ast.Call(
@@ -456,8 +491,9 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
     @staticmethod
     def _is_self_module_call(node: ast.Call) -> bool:
         """Check if this is a self.module(x) call."""
-        return (isinstance(node.func.value, ast.Name) and  # type: ignore[attr-defined]
-                node.func.value.id == "self")  # type: ignore[attr-defined]
+        return (
+            isinstance(node.func.value, ast.Name) and node.func.value.id == "self"  # type: ignore[attr-defined]
+        )  # type: ignore[attr-defined]
 
     def _is_functional_call(self, node: ast.Call) -> bool:
         """Check if this is a F.function(x) or torch.function(x) call."""
@@ -485,7 +521,9 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
         return False
 
     @staticmethod
-    def _transform_module_call(node: ast.Call, current_class_params: dict[str, dict[str, str | ast.AST | None]]) -> ast.Call | ast.Tuple:
+    def _transform_module_call(
+        node: ast.Call, current_class_params: dict[str, dict[str, str | ast.AST | None]]
+    ) -> ast.Call | ast.Tuple:
         """Transform self.module(x) -> direct call or jax.vmap(self.module)(x) based on module type."""
         module_name = node.func.attr  # type: ignore[attr-defined]
 
@@ -533,6 +571,7 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
         from equitorch.converters import (
             transform_functional_call,  # import inside this function so that mock test works
         )
+
         return transform_functional_call(node, module_name, func_name)
 
     @staticmethod
@@ -543,6 +582,7 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
             from equitorch.converters import (
                 transform_method_call,  # import inside this function so that mock test works
             )
+
             return transform_method_call(node, method_name)
         return node
 
@@ -555,9 +595,10 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
         # Check if the module is an RNN type based on our parameter tracking
         return module_name in current_class_params and current_class_params[module_name]["type"] in RNN_MODULE_TYPES
 
-
     @staticmethod
-    def _module_handles_batches_natively(module_name: str, current_class_params: dict[str, dict[str, str | ast.AST | None]]) -> bool:
+    def _module_handles_batches_natively(
+        module_name: str, current_class_params: dict[str, dict[str, str | ast.AST | None]]
+    ) -> bool:
         """Check if a module handles batches natively and doesn't need vmap."""
         # Get the module type for this parameter
         if module_name not in current_class_params:
@@ -570,9 +611,20 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
 
         # Built-in PyTorch modules that are converted to Equinox
         BATCH_NATIVE_MODULES = {  # noqa: N806
-            "Linear", "Conv1d", "Conv2d", "Conv3d", "ConvTranspose1d",
-            "ConvTranspose2d", "ConvTranspose3d", "BatchNorm1d", "BatchNorm2d",
-            "BatchNorm3d", "LayerNorm", "GroupNorm", "Dropout", "Embedding",
+            "Linear",
+            "Conv1d",
+            "Conv2d",
+            "Conv3d",
+            "ConvTranspose1d",
+            "ConvTranspose2d",
+            "ConvTranspose3d",
+            "BatchNorm1d",
+            "BatchNorm2d",
+            "BatchNorm3d",
+            "LayerNorm",
+            "GroupNorm",
+            "Dropout",
+            "Embedding",
             "MultiheadAttention",  # MultiheadAttention handles batches natively
         }
 
@@ -584,6 +636,7 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
         # Custom classes are also designed to work on single examples in Equinox
         # If the module_type is not in our known PyTorch modules, it's likely a custom class
         from .converters.module_converters import get_supported_modules
+
         supported_modules = get_supported_modules()
         return module_type not in supported_modules  # This is a custom class, treat it as batch-native (no vmap needed)
 
@@ -618,7 +671,11 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
                     ast.arg(arg="carry", annotation=None),
                     ast.arg(arg="x_t", annotation=None),
                 ],
-                vararg=None, kwonlyargs=[], kw_defaults=[], kwarg=None, defaults=[],
+                vararg=None,
+                kwonlyargs=[],
+                kw_defaults=[],
+                kwarg=None,
+                defaults=[],
             ),
             body=ast.Tuple(
                 elts=[rnn_call, rnn_call],  # (new_carry, output)
@@ -627,7 +684,9 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
         )
 
     @staticmethod
-    def _transform_rnn_call(node: ast.Call, module_name: str, current_class_params: dict[str, dict[str, str | ast.AST | None]]) -> ast.Tuple:
+    def _transform_rnn_call(
+        node: ast.Call, module_name: str, current_class_params: dict[str, dict[str, str | ast.AST | None]]
+    ) -> ast.Tuple:
         """Transform RNN calls to use jax.lax.scan for sequential processing."""
         # For RNN calls like self.rnn(x, hidden), we need to use jax.lax.scan
         # to process the sequence step by step
@@ -762,7 +821,11 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
         )
 
     @staticmethod
-    def _store_type_annotation(original_node: ast.Call, type_annotation: ast.AST, current_class_params: dict[str, dict[str, str | ast.AST | None]]):
+    def _store_type_annotation(
+        original_node: ast.Call,
+        type_annotation: ast.AST,
+        current_class_params: dict[str, dict[str, str | ast.AST | None]],
+    ):
         """Store type annotation for a parameter based on its original call node."""
         # Find the parameter that corresponds to this call node
         for param in current_class_params.values():
@@ -772,12 +835,13 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
 
     def _contains_super_call(self, node: ast.AST) -> bool:
         """Recursively check if an AST node contains a super() call anywhere."""
+
         class SuperCallFinder(ast.NodeVisitor):
             def __init__(self):
                 self.found_super = False
 
             def visit_Call(self, node):  # noqa: N802
-                if (isinstance(node.func, ast.Name) and node.func.id == "super"):
+                if isinstance(node.func, ast.Name) and node.func.id == "super":
                     self.found_super = True
                 self.generic_visit(node)  # Continue searching in child nodes
 
@@ -788,6 +852,7 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
     @staticmethod
     def _assignment_needs_key_splitting(node: ast.Assign) -> bool:
         """Check if an assignment contains subkey usage and needs key splitting."""
+
         class SubkeyFinder(ast.NodeVisitor):
             def __init__(self):
                 self.found_subkey = False
@@ -800,7 +865,9 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
         finder.visit(node)
         return finder.found_subkey
 
-    def _is_custom_class_init(self, node: ast.Call, current_class_params: dict[str, dict[str, str | ast.AST | None]]) -> bool:
+    def _is_custom_class_init(
+        self, node: ast.Call, current_class_params: dict[str, dict[str, str | ast.AST | None]]
+    ) -> bool:
         """Check if this is a custom class instantiation that needs a key."""
         if isinstance(node.func, ast.Name):
             # Check if this class name is in our tracked parameters
@@ -821,7 +888,7 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
         # Only add key to actual Call nodes, not function references
         if not isinstance(call_node, ast.Call):
             return
-            
+
         # Check if key parameter already exists
         has_key = any(kw.arg == "key" for kw in call_node.keywords if kw.arg is not None)
 
@@ -833,7 +900,9 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
             )
             call_node.keywords.append(key_keyword)
 
-    def _transform_module_init(self, node: ast.Call, current_class_params: dict[str, dict[str, str | ast.AST | None]]) -> ast.expr:
+    def _transform_module_init(
+        self, node: ast.Call, current_class_params: dict[str, dict[str, str | ast.AST | None]]
+    ) -> ast.expr:
         """Transform PyTorch module initialization to Equinox using modular converters."""
         module_type = node.func.attr  # type: ignore[attr-defined]
         if is_supported_module(module_type):
@@ -862,17 +931,21 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
 
     def _transform_keyword_arguments(self, node: ast.Call) -> ast.Call:
         """Transform keyword arguments that contain PyTorch constructs.
-        
+
         This handles cases like dtype=torch.float -> dtype=jnp.float32
         """
         for keyword in node.keywords:
             from .converters.functional_converters import FUNCTIONAL_MAPPINGS
+
             # Check for torch.dtype patterns
             # Use functional mappings to convert torch.float -> jnp.float32
-            if (keyword.value and isinstance(keyword.value, ast.Attribute) and
-                    isinstance(keyword.value.value, ast.Name) and
-                    keyword.value.value.id == "torch" and
-                    ("torch", keyword.value.attr) in FUNCTIONAL_MAPPINGS):
+            if (
+                keyword.value
+                and isinstance(keyword.value, ast.Attribute)
+                and isinstance(keyword.value.value, ast.Name)
+                and keyword.value.value.id == "torch"
+                and ("torch", keyword.value.attr) in FUNCTIONAL_MAPPINGS
+            ):
                 mapping_key = ("torch", keyword.value.attr)
                 new_module, new_attr = FUNCTIONAL_MAPPINGS[mapping_key]
                 # Create new attribute reference
@@ -931,10 +1004,10 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
 
 def transpile(pytorch_code: str) -> str:
     """Complete transpiler using proper AST transformation patterns and modular converters.
-    
+
     Args:
         pytorch_code: PyTorch module code
-        
+
     Returns:
         Equivalent Equinox code
     """

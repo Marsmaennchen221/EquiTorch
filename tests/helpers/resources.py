@@ -3,6 +3,7 @@ from pathlib import Path
 # Test-resources root
 _resources_root = Path(__file__).parent / ".." / "resources"
 
+
 def resolve_resource_path(resource_path: str | Path) -> Path:
     """Resolve the given resource path.
 

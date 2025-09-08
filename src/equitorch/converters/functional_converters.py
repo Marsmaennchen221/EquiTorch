@@ -50,39 +50,39 @@ CUSTOM_FUNCTIONAL_TRANSFORMERS: dict[tuple[str, str], Callable] = {
 
 def transform_functional_call(node: ast.Call, module_name: str, func_name: str) -> ast.Call:
     """Transform a PyTorch functional call to its JAX equivalent.
-    
+
     Args:
         node: The AST Call node to transform
         module_name: The module name (e.g., 'F', 'torch')
         func_name: The function name (e.g., 'relu', 'flatten')
-        
+
     Returns:
         Transformed AST Call node
     """
     mapping_key = (module_name, func_name)
-    
+
     # Check for custom transformers first
     if mapping_key in CUSTOM_FUNCTIONAL_TRANSFORMERS:
         transformer = CUSTOM_FUNCTIONAL_TRANSFORMERS[mapping_key]
         return transformer(node)
-    
+
     # Check for simple mappings
     if mapping_key in FUNCTIONAL_MAPPINGS:
         new_module, new_func = FUNCTIONAL_MAPPINGS[mapping_key]
         return transform_simple_functional(node, new_module, new_func)
-    
+
     # No mapping found - return unchanged
     return node
 
 
 def transform_simple_functional(node: ast.Call, new_module: str, new_func: str) -> ast.Call:
     """Transform a simple functional call with direct mapping.
-    
+
     Args:
         node: The AST Call node
         new_module: Target module (e.g., 'jax.nn')
         new_func: Target function (e.g., 'relu')
-        
+
     Returns:
         Transformed AST Call node
     """
@@ -104,7 +104,7 @@ def transform_simple_functional(node: ast.Call, new_module: str, new_func: str) 
             attr=new_func,
             ctx=ast.Load(),
         )
-    
+
     return ast.Call(
         func=new_func_ref,
         args=node.args,
@@ -112,37 +112,39 @@ def transform_simple_functional(node: ast.Call, new_module: str, new_func: str) 
     )
 
 
-def transform_max_pool(node: ast.Call, new_module: str, new_func: str, func_name: str) -> ast.Call | ast.expr:  # noqa: ARG001
+def transform_max_pool(
+    node: ast.Call, new_module: str, new_func: str, func_name: str
+) -> ast.Call | ast.expr:  # noqa: ARG001
     """Transform max_pool with proper parameter mapping using jax.scipy.signal.pool.
-    
+
     Args:
         node: The AST Call node
         new_module: Target module (unused)
         new_func: Target function (unused)
         func_name: Original function name for dimension info
-        
+
     Returns:
         Transformed AST Call node using jax.scipy.signal.pool
     """
     invalid_args_len = 2
     if len(node.args) < invalid_args_len:
         return node  # Invalid call
-    
+
     try:
         # Extract arguments
         input_tensor = node.args[0]
         kernel_size = node.args[1]
-        
+
         # Convert AST nodes to code strings
         input_str = ast.unparse(input_tensor)
         kernel_str = ast.unparse(kernel_size)
-        
+
         # Extract stride if provided, otherwise default to kernel_size
         if len(node.args) > invalid_args_len:
             stride_str = ast.unparse(node.args[2])
         else:
             stride_str = kernel_str
-        
+
     except RecursionError:
         # Fallback to original node if anything goes wrong
         return node
@@ -167,18 +169,18 @@ def transform_max_pool(node: ast.Call, new_module: str, new_func: str, func_name
 
 def transform_torch_flatten(node: ast.Call) -> ast.Call:
     """Transform torch.flatten to jnp.reshape.
-    
+
     Args:
         node: The AST Call node for torch.flatten
-        
+
     Returns:
         Transformed AST Call node for jnp.reshape
     """
     if len(node.args) < 1:
         return node
-    
+
     input_tensor = node.args[0]
-    
+
     # Create shape tuple for flattening: (batch_size, -1)
     shape_elements = [
         ast.Subscript(
@@ -188,9 +190,9 @@ def transform_torch_flatten(node: ast.Call) -> ast.Call:
         ),
         ast.Constant(value=-1),
     ]
-    
+
     shape_tuple = ast.Tuple(elts=shape_elements, ctx=ast.Load())
-    
+
     return ast.Call(
         func=ast.Attribute(
             value=ast.Name(id="jnp", ctx=ast.Load()),
@@ -204,10 +206,10 @@ def transform_torch_flatten(node: ast.Call) -> ast.Call:
 
 def transform_torch_zeros(node: ast.Call) -> ast.Call:
     """Transform torch.zeros to jnp.zeros with proper shape tuple.
-    
+
     Args:
         node: The AST Call node for torch.zeros
-        
+
     Returns:
         Transformed AST Call node for jnp.zeros
     """
@@ -217,7 +219,7 @@ def transform_torch_zeros(node: ast.Call) -> ast.Call:
         shape_tuple = ast.Tuple(elts=list(node.args), ctx=ast.Load())
     else:
         shape_tuple = ast.Tuple(elts=[], ctx=ast.Load())
-    
+
     return ast.Call(
         func=ast.Attribute(
             value=ast.Name(id="jnp", ctx=ast.Load()),
@@ -231,13 +233,13 @@ def transform_torch_zeros(node: ast.Call) -> ast.Call:
 
 def transform_torch_randn(node: ast.Call) -> ast.Call:
     """Transform torch.randn to jax.random.normal with proper argument order.
-    
+
     PyTorch: torch.randn(shape_args...)
     JAX: jax.random.normal(key, (shape_args...))
-    
+
     Args:
         node: The AST Call node for torch.randn
-        
+
     Returns:
         Transformed AST Call node for jax.random.normal
     """
@@ -248,7 +250,7 @@ def transform_torch_randn(node: ast.Call) -> ast.Call:
     else:
         # Multiple arguments - wrap in tuple
         shape_arg = ast.Tuple(elts=list(node.args), ctx=ast.Load())
-    
+
     # Create jax.random.normal(subkey, shape)
     return ast.Call(
         func=ast.Attribute(
@@ -270,24 +272,24 @@ def transform_torch_randn(node: ast.Call) -> ast.Call:
 
 def transform_torch_randint(node: ast.Call) -> ast.Call:
     """Transform torch.randint to jax.random.randint with proper argument order.
-    
+
     PyTorch: torch.randint(low, high, size)
     JAX: jax.random.randint(key, shape, minval, maxval)
-    
+
     Args:
         node: The AST Call node for torch.randint
-        
+
     Returns:
         Transformed AST Call node for jax.random.randint
     """
     invalid_args_len = 3
     if len(node.args) < invalid_args_len:
         return node  # Invalid call
-    
+
     low = node.args[0]
     high = node.args[1]
     shape = node.args[2]
-    
+
     # Create jax.random.randint(subkey, shape, minval, maxval)
     return ast.Call(
         func=ast.Attribute(
@@ -302,8 +304,8 @@ def transform_torch_randint(node: ast.Call) -> ast.Call:
         args=[
             ast.Name(id="subkey", ctx=ast.Load()),  # key first
             shape,  # shape second
-            low,    # minval third
-            high,    # maxval fourth
+            low,  # minval third
+            high,  # maxval fourth
         ],
         keywords=[],
     )
@@ -311,37 +313,37 @@ def transform_torch_randint(node: ast.Call) -> ast.Call:
 
 def transform_linear(node: ast.Call) -> ast.Call | ast.expr:
     """Transform F.linear(input, weight, bias) to JAX equivalent.
-    
-    PyTorch: F.linear(input, weight, bias) 
+
+    PyTorch: F.linear(input, weight, bias)
     JAX: jnp.dot(input, weight.T) + bias (if bias is not None)
-    
+
     Args:
         node: The AST Call node for F.linear
-        
+
     Returns:
         Transformed AST Call node
     """
     invalid_args_len = 2
     if len(node.args) < invalid_args_len:
         return node  # Invalid call, return unchanged
-    
+
     try:
         # Extract arguments
         input_tensor = node.args[0]
         weight = node.args[1]
         bias = node.args[2] if len(node.args) > invalid_args_len else None
-        
+
         # Convert AST nodes to code strings
         input_str = ast.unparse(input_tensor)
         weight_str = ast.unparse(weight)
-        
+
         # Build target code string
         if bias is not None:
             bias_str = ast.unparse(bias)
             target_code = f"jnp.dot({input_str}, {weight_str}.T) + {bias_str}"
         else:
             target_code = f"jnp.dot({input_str}, {weight_str}.T)"
-        
+
     except RecursionError:
         # Fallback to original node if anything goes wrong
         return node
@@ -354,7 +356,7 @@ def transform_linear(node: ast.Call) -> ast.Call | ast.expr:
 
 def transform_layer_norm(node: ast.Call) -> ast.Call:
     """Transform F.layer_norm to JAX equivalent.
-    
+
     TODO: Implement layer normalization transformation.
     """
     return node
@@ -362,7 +364,7 @@ def transform_layer_norm(node: ast.Call) -> ast.Call:
 
 def transform_group_norm(node: ast.Call) -> ast.Call:
     """Transform F.group_norm to JAX equivalent.
-    
+
     TODO: Implement group normalization transformation.
     """
     return node
@@ -370,7 +372,7 @@ def transform_group_norm(node: ast.Call) -> ast.Call:
 
 def transform_adaptive_avg_pool2d(node: ast.Call) -> ast.Call:
     """Transform F.adaptive_avg_pool2d to JAX equivalent.
-    
+
     TODO: Implement adaptive average pooling transformation.
     """
     return node
@@ -378,11 +380,11 @@ def transform_adaptive_avg_pool2d(node: ast.Call) -> ast.Call:
 
 def is_supported_functional(module_name: str, func_name: str) -> bool:
     """Check if a PyTorch functional call is supported for conversion.
-    
+
     Args:
         module_name: Module name (e.g., 'F', 'torch')
         func_name: Function name (e.g., 'relu', 'flatten')
-        
+
     Returns:
         True if the functional call can be converted, False otherwise
     """
@@ -392,11 +394,11 @@ def is_supported_functional(module_name: str, func_name: str) -> bool:
 
 def get_functional_mapping(module_name: str, func_name: str) -> tuple[str, str] | None:
     """Get the JAX mapping for a PyTorch functional call.
-    
+
     Args:
         module_name: Module name (e.g., 'F', 'torch')
         func_name: Function name (e.g., 'relu', 'flatten')
-        
+
     Returns:
         Tuple of (target_module, target_function) or None if not supported
     """
@@ -405,7 +407,7 @@ def get_functional_mapping(module_name: str, func_name: str) -> tuple[str, str] 
 
 def get_supported_functionals() -> list[tuple[str, str]]:
     """Get a list of all supported PyTorch functional calls.
-    
+
     Returns:
         List of (module_name, func_name) tuples
     """

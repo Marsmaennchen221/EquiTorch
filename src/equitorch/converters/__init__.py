@@ -38,7 +38,6 @@ __all__ = [  # noqa: RUF022
     "get_module_converter",
     "get_supported_modules",
     "is_supported_module",
-
     # Functional converters
     "FUNCTIONAL_MAPPINGS",
     "get_functional_mapping",
@@ -47,7 +46,6 @@ __all__ = [  # noqa: RUF022
     "transform_functional_call",
     "transform_max_pool",
     "transform_torch_flatten",
-
     # Method converters
     "get_method_mapping",
     "get_method_name",
