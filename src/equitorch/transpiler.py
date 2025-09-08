@@ -86,6 +86,12 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
 
     def visit_Module(self, node: ast.Module) -> ast.Module:  # noqa: N802
         """Transform the entire module."""
+        # First, process all imports to build the import tracking
+        # This ensures self.current_imports is populated before any call transformations
+        for stmt in node.body:
+            if isinstance(stmt, (ast.Import, ast.ImportFrom)):
+                self.visit(stmt)
+        
         # Add JAX/Equinox imports at the top
         imports = [
             ast.Import(names=[ast.alias(name="jax", asname=None)]),
@@ -95,10 +101,18 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
             ast.Import(names=[ast.alias(name="equitorch.lib", asname="eqt")])
         ]
 
-        # Transform the rest of the module
+        # Store the original import tracking before transformation
+        original_imports = self.current_imports.copy()
+
+        # Now transform the rest of the module with import tracking in place
+        # This ensures functional calls can be properly detected and converted
         new_node: ast.Module = self.generic_visit(node)  # type: ignore[assignment]
 
-        # Filter out PyTorch imports
+        # Restore import tracking in case it was modified during transformation
+        self.current_imports = original_imports
+
+        # Filter out PyTorch imports AFTER all transformations are complete
+        # But preserve the import tracking for any remaining processing
         filtered_body = self._filter_pytorch_imports(new_node.body)
 
         # Inject required class definitions
@@ -147,7 +161,9 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
             return self._transform_init_method(node)
         if node.name == "forward":
             return self._transform_forward_method(node)
-        return node
+        
+        # For all other functions, still need to traverse the body to transform calls
+        return self.generic_visit(node)  # type: ignore[return-value]
 
     def visit_Assign(self, node: ast.Assign) -> list[ast.stmt]:  # noqa: N802
         """Transform assignments, adding key splitting for module initializations."""
@@ -419,9 +435,16 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
             module_path.append(inner_node.attr)
             inner_node = inner_node.value
         if isinstance(inner_node, ast.Name):
-            if inner_node.id not in self.current_imports:
-                return False
-            module_path.append(self.current_imports[inner_node.id])
+            # Check if it's in our import tracking
+            if inner_node.id in self.current_imports:
+                module_path.append(self.current_imports[inner_node.id])
+            else:
+                # Fallback: if it's 'torch' and not in imports, assume it's torch
+                # This handles cases where imports were filtered but calls still need conversion
+                if inner_node.id == "torch":
+                    module_path.append("torch")
+                else:
+                    return False
         module_path.reverse()
         return ".".join(module_path) in ["torch.nn.functional", "torch"]
 
