@@ -5,7 +5,7 @@ PyTorch functional method calls (F.relu(), torch.flatten(), etc.) to their JAX/N
 """
 
 import ast
-from typing import Callable
+from collections.abc import Callable
 
 # Simple 1:1 functional mappings that only need function name changes
 # Format: (module, function) -> (target_module, target_function)
@@ -161,7 +161,7 @@ def transform_max_pool(node: ast.Call, new_module: str, new_func: str, func_name
         )"""
 
         # Parse back to AST and return the expression
-        parsed = ast.parse(target_code, mode='eval')
+        parsed = ast.parse(target_code, mode="eval")
         return parsed.body
 
 
@@ -255,16 +255,16 @@ def transform_torch_randn(node: ast.Call) -> ast.Call:
             value=ast.Attribute(
                 value=ast.Name(id="jax", ctx=ast.Load()),
                 attr="random",
-                ctx=ast.Load()
+                ctx=ast.Load(),
             ),
             attr="normal",
-            ctx=ast.Load()
+            ctx=ast.Load(),
         ),
         args=[
             ast.Name(id="subkey", ctx=ast.Load()),  # key first
-            shape_arg  # shape second
+            shape_arg,  # shape second
         ],
-        keywords=[]
+        keywords=[],
     )
 
 
@@ -294,18 +294,18 @@ def transform_torch_randint(node: ast.Call) -> ast.Call:
             value=ast.Attribute(
                 value=ast.Name(id="jax", ctx=ast.Load()),
                 attr="random",
-                ctx=ast.Load()
+                ctx=ast.Load(),
             ),
             attr="randint",
-            ctx=ast.Load()
+            ctx=ast.Load(),
         ),
         args=[
             ast.Name(id="subkey", ctx=ast.Load()),  # key first
             shape,  # shape second
             low,    # minval third
-            high    # maxval fourth
+            high,    # maxval fourth
         ],
-        keywords=[]
+        keywords=[],
     )
 
 
@@ -348,7 +348,7 @@ def transform_linear(node: ast.Call) -> ast.Call | ast.expr:
 
     else:
         # Parse back to AST and return the expression
-        parsed = ast.parse(target_code, mode='eval')
+        parsed = ast.parse(target_code, mode="eval")
         return parsed.body
 
 

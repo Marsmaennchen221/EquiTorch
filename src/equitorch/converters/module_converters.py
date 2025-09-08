@@ -10,13 +10,13 @@ import ast
 import inspect
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    import torch.nn as nn
+    from torch import nn
 else:
     try:
-        import torch.nn as nn
+        from torch import nn
     except ImportError:
         nn = None
 
@@ -47,46 +47,46 @@ SIMPLE_MODULE_MAPPINGS: dict[str, str] = {
 class SimpleModuleConfig:
     """Configuration for simple module conversions."""
     target_module: str
-    default_parameters: Optional[dict[str, Any]] = None
-    parameter_filters: Optional[set[str]] = None
-    args_slice: Optional[slice] = None
+    default_parameters: dict[str, Any] | None = None
+    parameter_filters: set[str] | None = None
+    args_slice: slice | None = None
 
 
 SIMPLE_MODULE_CONFIGS: dict[str, SimpleModuleConfig] = {
     "Linear": SimpleModuleConfig(
         target_module="eqx.nn.Linear",
-        default_parameters={"use_bias": True}
+        default_parameters={"use_bias": True},
     ),
     "Conv1d": SimpleModuleConfig(
         target_module="eqx.nn.Conv1d",
-        default_parameters={"use_bias": True}
+        default_parameters={"use_bias": True},
     ),
     "Conv2d": SimpleModuleConfig(
         target_module="eqx.nn.Conv2d",
-        default_parameters={"use_bias": True}
+        default_parameters={"use_bias": True},
     ),
     "Conv3d": SimpleModuleConfig(
         target_module="eqx.nn.Conv3d",
-        default_parameters={"use_bias": True}
+        default_parameters={"use_bias": True},
     ),
     "BatchNorm1d": SimpleModuleConfig(target_module="eqx.nn.BatchNorm1d"),
     "BatchNorm2d": SimpleModuleConfig(target_module="eqx.nn.BatchNorm2d"),
     "BatchNorm3d": SimpleModuleConfig(target_module="eqx.nn.BatchNorm3d"),
     "Dropout": SimpleModuleConfig(
         target_module="eqx.nn.Dropout",
-        parameter_filters={"key"}  # Dropout doesn't take a key parameter
+        parameter_filters={"key"},  # Dropout doesn't take a key parameter
     ),
     "LayerNorm": SimpleModuleConfig(
         target_module="eqx.nn.LayerNorm",
-        parameter_filters={"elementwise_affine", "eps", "key"}  # Filter PyTorch-specific params and key
+        parameter_filters={"elementwise_affine", "eps", "key"},  # Filter PyTorch-specific params and key
     ),
     "Embedding": SimpleModuleConfig(
         target_module="eqx.nn.Embedding",
-        parameter_filters={"padding_idx", "max_norm", "norm_type", "scale_grad_by_freq", "sparse"}
+        parameter_filters={"padding_idx", "max_norm", "norm_type", "scale_grad_by_freq", "sparse"},
     ),
     "LSTM": SimpleModuleConfig(
         target_module="eqx.nn.LSTMCell",
-        args_slice=slice(0, 2)  # Only take input_size, hidden_size
+        args_slice=slice(0, 2),  # Only take input_size, hidden_size
     ),
 }
 
@@ -156,7 +156,6 @@ CUSTOM_IMPLEMENTATIONS: dict[str, str] = {
 
 def transform_multihead_attention(node: ast.Call, key_counter: int) -> tuple[ast.Call, ast.AST]:  # noqa: ARG001
     """Transform MultiheadAttention to use custom libEquitorch implementation."""
-    
     # Extract arguments and keywords from PyTorch call
     args = list(node.args)
     newkeywords = list(node.keywords)
@@ -171,13 +170,13 @@ def transform_multihead_attention(node: ast.Call, key_counter: int) -> tuple[ast
             value=ast.Attribute(
                 value=ast.Name(id="eqt", ctx=ast.Load()),  # Use eqt
                 attr="nn",
-                ctx=ast.Load()
+                ctx=ast.Load(),
             ),
             attr="EquiTorchMultiHeadAttention",  # Use the correct class name
-            ctx=ast.Load()
+            ctx=ast.Load(),
         ),
         args=args,
-        keywords=keywords
+        keywords=keywords,
     )
     
     # Type annotation should also use eqt.nn.MultiheadAttention
@@ -185,10 +184,10 @@ def transform_multihead_attention(node: ast.Call, key_counter: int) -> tuple[ast
         value=ast.Attribute(
             value=ast.Name(id="eqt", ctx=ast.Load()),
             attr="nn",
-            ctx=ast.Load()
+            ctx=ast.Load(),
         ),
         attr="EquiTorchMultiHeadAttention",
-        ctx=ast.Load()
+        ctx=ast.Load(),
     )
     
     return transformed_node, type_annotation
@@ -215,7 +214,7 @@ def transform_rnn_module(node: ast.Call, key_counter: int) -> tuple[ast.Call, as
     transformed_node = ast.Call(
         func=ast.Name(id="ElmanRNNCell", ctx=ast.Load()),
         args=args,
-        keywords=filtered_keywords
+        keywords=filtered_keywords,
     )
     
     type_annotation = ast.Name(id="ElmanRNNCell", ctx=ast.Load())
@@ -251,16 +250,16 @@ def transform_parameter(node: ast.Call, key_counter: int) -> tuple[ast.Call | as
                     value=ast.Attribute(
                         value=ast.Name(id="jax", ctx=ast.Load()),
                         attr="random",
-                        ctx=ast.Load()
+                        ctx=ast.Load(),
                     ),
                     attr="normal",
-                    ctx=ast.Load()
+                    ctx=ast.Load(),
                 ),
                 args=[
                     ast.Name(id="subkey", ctx=ast.Load()),  # key first
-                    shape_arg  # shape second
+                    shape_arg,  # shape second
                 ],
-                keywords=[]
+                keywords=[],
             )
         else:
             # For other inner calls, just extract them
@@ -272,7 +271,7 @@ def transform_parameter(node: ast.Call, key_counter: int) -> tuple[ast.Call | as
     type_annotation = ast.Attribute(
         value=ast.Name(id="jnp", ctx=ast.Load()),
         attr="ndarray",
-        ctx=ast.Load()
+        ctx=ast.Load(),
     )
     
     return transformed_node, type_annotation
@@ -295,13 +294,13 @@ def transform_sequential(node: ast.Call, key_counter: int) -> tuple[ast.Call, as
             value=ast.Attribute(
                 value=ast.Name(id="eqx", ctx=ast.Load()),
                 attr="nn",
-                ctx=ast.Load()
+                ctx=ast.Load(),
             ),
             attr="Sequential",
-            ctx=ast.Load()
+            ctx=ast.Load(),
         ),
         args=[layers_list],  # Pass the list as a single argument
-        keywords=keywords
+        keywords=keywords,
     )
     
     # Type annotation should also use eqx.nn.Sequential
@@ -309,10 +308,10 @@ def transform_sequential(node: ast.Call, key_counter: int) -> tuple[ast.Call, as
         value=ast.Attribute(
             value=ast.Name(id="eqx", ctx=ast.Load()),
             attr="nn",
-            ctx=ast.Load()
+            ctx=ast.Load(),
         ),
         attr="Sequential",
-        ctx=ast.Load()
+        ctx=ast.Load(),
     )
     
     return transformed_node, type_annotation
@@ -328,7 +327,7 @@ def transform_module_list(node: ast.Call, key_counter: int) -> tuple[ast.Call, a
     transformed_node = ast.Call(
         func=ast.Name(id="ModuleList", ctx=ast.Load()),
         args=node.args,
-        keywords=keywords
+        keywords=keywords,
     )
     
     type_annotation = ast.Name(id="ModuleList", ctx=ast.Load())
@@ -347,10 +346,10 @@ def transform_relu(node: ast.Call, key_counter: int) -> tuple[ast.Attribute, ast
         value=ast.Attribute(
             value=ast.Name(id="jax", ctx=ast.Load()),
             attr="nn",
-            ctx=ast.Load()
+            ctx=ast.Load(),
         ),
         attr="relu",
-        ctx=ast.Load()
+        ctx=ast.Load(),
     )
     
     # Type annotation is also jax.nn.relu (function type)
@@ -358,10 +357,10 @@ def transform_relu(node: ast.Call, key_counter: int) -> tuple[ast.Attribute, ast
         value=ast.Attribute(
             value=ast.Name(id="jax", ctx=ast.Load()),
             attr="nn",
-            ctx=ast.Load()
+            ctx=ast.Load(),
         ),
         attr="relu",
-        ctx=ast.Load()
+        ctx=ast.Load(),
     )
     
     return transformed_node, type_annotation
@@ -380,13 +379,13 @@ def transform_dropout(node: ast.Call, key_counter: int) -> tuple[ast.Call, ast.A
             value=ast.Attribute(
                 value=ast.Name(id="eqx", ctx=ast.Load()),
                 attr="nn",
-                ctx=ast.Load()
+                ctx=ast.Load(),
             ),
             attr="Dropout",
-            ctx=ast.Load()
+            ctx=ast.Load(),
         ),
         args=node.args,
-        keywords=filtered_keywords
+        keywords=filtered_keywords,
     )
     
     # Type annotation
@@ -394,10 +393,10 @@ def transform_dropout(node: ast.Call, key_counter: int) -> tuple[ast.Call, ast.A
         value=ast.Attribute(
             value=ast.Name(id="eqx", ctx=ast.Load()),
             attr="nn",
-            ctx=ast.Load()
+            ctx=ast.Load(),
         ),
         attr="Dropout",
-        ctx=ast.Load()
+        ctx=ast.Load(),
     )
     
     return transformed_node, type_annotation

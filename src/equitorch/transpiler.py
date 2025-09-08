@@ -63,7 +63,7 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
             Filtered list without PyTorch imports
         """
         filtered_body: list[ast.stmt] = []
-        pytorch_modules = {'torch', 'torch.nn', 'torch.nn.functional'}
+        pytorch_modules = {"torch", "torch.nn", "torch.nn.functional"}
 
         for stmt in body:
             if isinstance(stmt, ast.Import):
@@ -96,7 +96,7 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
             ast.Import(names=[ast.alias(name="jax.numpy", asname="jnp")]),
             ast.Import(names=[ast.alias(name="jax.random", asname="jr")]),
             ast.Import(names=[ast.alias(name="equinox", asname="eqx")]),
-            ast.Import(names=[ast.alias(name="equitorch.lib", asname="eqt")])
+            ast.Import(names=[ast.alias(name="equitorch.lib", asname="eqt")]),
         ]
 
         original_imports = self.current_imports.copy()
@@ -171,23 +171,23 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
                 targets=[ast.Tuple(
                     elts=[
                         ast.Name(id="key", ctx=ast.Store()),
-                        ast.Name(id=f"subkey", ctx=ast.Store())
+                        ast.Name(id="subkey", ctx=ast.Store()),
                     ],
-                    ctx=ast.Store()
+                    ctx=ast.Store(),
                 )],
                 value=ast.Call(
                     func=ast.Attribute(
                         value=ast.Attribute(
                             value=ast.Name(id="jax", ctx=ast.Load()),
                             attr="random",
-                            ctx=ast.Load()
+                            ctx=ast.Load(),
                         ),
                         attr="split",
-                        ctx=ast.Load()
+                        ctx=ast.Load(),
                     ),
                     args=[ast.Name(id="key", ctx=ast.Load())],
-                    keywords=[]
-                )
+                    keywords=[],
+                ),
             )
             statements.append(key_split)
 
@@ -289,7 +289,7 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
                                     ),
                                     attr=str(module_type),
                                     ctx=ast.Load(),
-                                )
+                                ),
                             })  # Override same name with latest assignment
                         elif isinstance(node.value.func, ast.Name):
                             class_name = node.value.func.id
@@ -314,14 +314,14 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
                 """Infer type annotation from assignment value."""
                 if isinstance(value_node, ast.Name):
                     # For simple variable assignments, assume int for common cases
-                    if value_node.id in ['d_model', 'vocab_size', 'num_heads', 'd_ff', 'hidden_size', 'input_size', 'output_size']:
+                    if value_node.id in ["d_model", "vocab_size", "num_heads", "d_ff", "hidden_size", "input_size", "output_size"]:
                         return ast.Name(id="int", ctx=ast.Load())
                 elif isinstance(value_node, ast.Constant):
                     if isinstance(value_node.value, int):
                         return ast.Name(id="int", ctx=ast.Load())
-                    elif isinstance(value_node.value, float):
+                    if isinstance(value_node.value, float):
                         return ast.Name(id="float", ctx=ast.Load())
-                    elif isinstance(value_node.value, str):
+                    if isinstance(value_node.value, str):
                         return ast.Name(id="str", ctx=ast.Load())
                 elif (isinstance(value_node, ast.Call) and
                       isinstance(value_node.func, ast.Attribute) and
@@ -333,7 +333,7 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
                     return ast.Attribute(
                         value=ast.Name(id="jnp", ctx=ast.Load()),
                         attr="ndarray",
-                        ctx=ast.Load()
+                        ctx=ast.Load(),
                     )
                 
                 # Default fallback
@@ -469,11 +469,10 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
         if isinstance(inner_node, ast.Name):
             if inner_node.id in self.current_imports:
                 module_path.append(self.current_imports[inner_node.id])
+            elif inner_node.id == "torch":
+                module_path.append("torch")
             else:
-                if inner_node.id == "torch":
-                    module_path.append("torch")
-                else:
-                    return False
+                return False
         module_path.reverse()
         return ".".join(module_path) in ["torch.nn.functional", "torch"]
 
@@ -574,7 +573,7 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
             "Linear", "Conv1d", "Conv2d", "Conv3d", "ConvTranspose1d",
             "ConvTranspose2d", "ConvTranspose3d", "BatchNorm1d", "BatchNorm2d",
             "BatchNorm3d", "LayerNorm", "GroupNorm", "Dropout", "Embedding",
-            "MultiheadAttention"  # MultiheadAttention handles batches natively
+            "MultiheadAttention",  # MultiheadAttention handles batches natively
         }
 
         # Check if it's a built-in PyTorch module
@@ -596,7 +595,6 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
     @staticmethod
     def _create_rnn_scan_function(rnn_type: str, module_name: str) -> ast.Lambda:  # noqa: ARG004
         """Create proper scan function based on RNN type."""
-
         # Create a single RNN call that we'll reuse
         rnn_call = ast.Call(
             func=ast.Attribute(
@@ -831,7 +829,7 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
             # Add the subkey to the call - the key splitting will be handled in visit_Assign
             key_keyword = ast.keyword(
                 arg="key",
-                value=ast.Name(id="subkey", ctx=ast.Load())
+                value=ast.Name(id="subkey", ctx=ast.Load()),
             )
             call_node.keywords.append(key_keyword)
 
@@ -856,11 +854,10 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
                 if module_type not in ["Parameter", "Dropout", "Sequential", "LayerNorm"]:
                     self._add_key_to_call(transformed_node)  # type: ignore[arg-type]
                 return transformed_node
-            else:
-                # Old interface - add key parameter (except for Parameter and Dropout)
-                if module_type not in ["Parameter", "Dropout"]:
-                    self._add_key_to_call(result)
-                return result
+            # Old interface - add key parameter (except for Parameter and Dropout)
+            if module_type not in ["Parameter", "Dropout"]:
+                self._add_key_to_call(result)
+            return result
         return node
 
     def _transform_keyword_arguments(self, node: ast.Call) -> ast.Call:
@@ -901,8 +898,8 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
     def _get_required_class_definitions(self) -> list[ast.stmt]:
         """Generate AST nodes for required class definitions using the unified system."""
         from .converters.module_converters import (
-            get_required_custom_implementations,
             auto_transpile_module,
+            get_required_custom_implementations,
             get_supported_modules,
         )
 

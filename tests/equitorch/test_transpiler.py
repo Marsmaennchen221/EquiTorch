@@ -10,7 +10,7 @@ from syrupy import SnapshotAssertion
 
 from equitorch import converters
 from equitorch.transpiler import PyTorchToEquinoxTransformer, transpile
-from tests.helpers.utils import compare_ast, read_python_code, import_transpiled_module, write_transpiled_code
+from tests.helpers.utils import compare_ast, import_transpiled_module, read_python_code, write_transpiled_code
 
 
 def transform_to_equinox_ast(pytorch_code: str) -> ast.AST:
@@ -52,7 +52,7 @@ def test_nn_transpilation(resource_path: str | Path, snapshot_equinox_code: Snap
 
     # Additional verification: check that the transpiled code is syntactically valid
     try:
-        compile(equinox_code, '<string>', 'exec')
+        compile(equinox_code, "<string>", "exec")
     except SyntaxError as e:
         pytest.fail(f"Transpiled code has syntax errors: {e}")
 
@@ -598,7 +598,7 @@ class TestPyTorchToEquinoxTransformer:
             assert isinstance(tree.body[-num_of_modules+module_index].value.keywords[-1].value, ast.Name)  # type: ignore[attr-defined]
             # TODO: change back to different variable names for the subkeys?
             # assert tree.body[-num_of_modules+module_index].value.keywords[-1].value.id == f"key_{module_index}"  # type: ignore[attr-defined]
-            assert tree.body[-num_of_modules+module_index].value.keywords[-1].value.id == f"subkey"  # type: ignore[attr-defined]
+            assert tree.body[-num_of_modules+module_index].value.keywords[-1].value.id == "subkey"  # type: ignore[attr-defined]
 
     def test_transform_module_init_not_supported(self) -> None:
         tree = ast.parse("import torch.nn as nn\nnn.Module()")
@@ -625,7 +625,7 @@ class TestPyTorchToEquinoxTransformer:
             assert isinstance(tree.body[node_index].value.keywords[-1].value, ast.Name)  # type: ignore[attr-defined]
             # TODO: change back to different variable names for the subkeys
             # assert tree.body[node_index].value.keywords[-1].value.id == f"key_{key_index}"  # type: ignore[attr-defined]
-            assert tree.body[node_index].value.keywords[-1].value.id == f"subkey"  # type: ignore[attr-defined]
+            assert tree.body[node_index].value.keywords[-1].value.id == "subkey"  # type: ignore[attr-defined]
 
         assert isinstance(tree.body[-1], ast.ClassDef)  # ClassDef should reset key counter
         for _key_index, node_index in enumerate([-2, -1]):
@@ -635,7 +635,7 @@ class TestPyTorchToEquinoxTransformer:
             assert isinstance(tree.body[-1].body[node_index].value.keywords[-1].value, ast.Name)  # type: ignore[attr-defined]
             # TODO: change back to different variable names for the subkeys
             # assert tree.body[-1].body[node_index].value.keywords[-1].value.id == f"key_{key_index}"  # type: ignore[attr-defined]
-            assert tree.body[-1].body[node_index].value.keywords[-1].value.id == f"subkey"  # type: ignore[attr-defined]
+            assert tree.body[-1].body[node_index].value.keywords[-1].value.id == "subkey"  # type: ignore[attr-defined]
 
 
 def _generate_random_input(shape, key):
@@ -696,7 +696,7 @@ def _test_gradients(model, input_data, loss_fn=None):
         if isinstance(grad_tree, jnp.ndarray):
             assert jnp.all(jnp.isfinite(grad_tree)), "Gradients contain non-finite values"
             assert jnp.any(grad_tree != 0), "All gradients are zero"
-        elif hasattr(grad_tree, '__dict__'):
+        elif hasattr(grad_tree, "__dict__"):
             for _attr_name, attr_value in grad_tree.__dict__.items():
                 if attr_value is not None:
                     check_gradients(attr_value)
@@ -718,8 +718,8 @@ def test_mlp_instantiation_and_execution():
     model = module.MLP(input_size, hidden_size, output_size, key=key)
     
     # Verify model structure
-    assert hasattr(model, 'fc1'), "Model should have fc1 layer"
-    assert hasattr(model, 'fc2'), "Model should have fc2 layer"
+    assert hasattr(model, "fc1"), "Model should have fc1 layer"
+    assert hasattr(model, "fc2"), "Model should have fc2 layer"
     
     # Test forward pass with different batch sizes
     for batch_size in [1, 5, 10]:
@@ -753,8 +753,8 @@ def test_simple_custom_mlp_instantiation_and_execution():
     key, subkey = jax.random.split(key)
     
     custom_linear = module.CustomLinear(10, 5, key=subkey)
-    assert hasattr(custom_linear, 'weight'), "CustomLinear should have weight"
-    assert hasattr(custom_linear, 'bias'), "CustomLinear should have bias"
+    assert hasattr(custom_linear, "weight"), "CustomLinear should have weight"
+    assert hasattr(custom_linear, "bias"), "CustomLinear should have bias"
     assert custom_linear.weight.shape == (5, 10), f"Weight shape should be (5, 10), got {custom_linear.weight.shape}"
     assert custom_linear.bias.shape == (5,), f"Bias shape should be (5,), got {custom_linear.bias.shape}"
     
@@ -771,8 +771,8 @@ def test_simple_custom_mlp_instantiation_and_execution():
     model = module.SimpleMLP(input_size, hidden_size, output_size, key=subkey)
     
     # Verify model structure
-    assert hasattr(model, 'layer1'), "Model should have layer1"
-    assert hasattr(model, 'layer2'), "Model should have layer2"
+    assert hasattr(model, "layer1"), "Model should have layer1"
+    assert hasattr(model, "layer2"), "Model should have layer2"
     assert isinstance(model.layer1, module.CustomLinear), "layer1 should be CustomLinear"
     assert isinstance(model.layer2, module.CustomLinear), "layer2 should be CustomLinear"
     
@@ -810,9 +810,9 @@ def test_cnn_instantiation_and_execution():
     model = module.SimpleCNN(in_channels, num_classes, key=key)
     
     # Verify model structure
-    assert hasattr(model, 'conv1'), "Model should have conv1 layer"
-    assert hasattr(model, 'conv2'), "Model should have conv2 layer"
-    assert hasattr(model, 'fc'), "Model should have fc layer"
+    assert hasattr(model, "conv1"), "Model should have conv1 layer"
+    assert hasattr(model, "conv2"), "Model should have conv2 layer"
+    assert hasattr(model, "fc"), "Model should have fc layer"
     
     # Test forward pass with different batch sizes
     # Note: CNN is designed for 28x28 images (hardcoded Linear layer size)
@@ -857,7 +857,7 @@ def test_parameter_types_and_initialization():
         if isinstance(obj, jnp.ndarray):
             assert obj.dtype in [jnp.float32, jnp.float64], f"Parameter should be float, got {obj.dtype}"
             assert jnp.all(jnp.isfinite(obj)), "Parameter contains non-finite values"
-        elif hasattr(obj, '__dict__'):
+        elif hasattr(obj, "__dict__"):
             for attr_value in obj.__dict__.values():
                 if attr_value is not None:
                     check_params(attr_value)
@@ -898,12 +898,11 @@ def test_transformer_comprehensive_validation():
 
 def _validate_string_patterns(equinox_code):
     """Phase 1: Validate string patterns for correctness and completeness."""
-    
     # 1.1 Positive Assertions - Required elements
     required_imports = [
         "import jax",
         "import jax.numpy as jnp", 
-        "import equinox as eqx"
+        "import equinox as eqx",
     ]
     for import_stmt in required_imports:
         assert import_stmt in equinox_code, f"Missing required import: {import_stmt}"
@@ -911,7 +910,7 @@ def _validate_string_patterns(equinox_code):
     # Required class conversions
     required_classes = [
         "class SimpleTransformerBlock(eqx.Module):",
-        "class MinimalTransformer(eqx.Module):"
+        "class MinimalTransformer(eqx.Module):",
     ]
     for class_def in required_classes:
         assert class_def in equinox_code, f"Missing class conversion: {class_def}"
@@ -924,14 +923,14 @@ def _validate_string_patterns(equinox_code):
         "eqx.nn.Embedding",
         "eqx.nn.LayerNorm", 
         "eqx.nn.Linear",
-        "eqx.nn.Dropout"
+        "eqx.nn.Dropout",
     ]
     for module in required_modules:
         assert module in equinox_code, f"Missing module conversion: {module}"
     
     # Required functional conversions
     required_functions = [
-        "jax.random.split"
+        "jax.random.split",
     ]
     for func in required_functions:
         assert func in equinox_code, f"Missing functional conversion: {func}"
@@ -941,7 +940,7 @@ def _validate_string_patterns(equinox_code):
         "torch.randn", 
         ".unsqueeze(",
         ".squeeze(",
-        "nn.Parameter("
+        "nn.Parameter(",
     ]
     
     for construct in pytorch_constructs:
@@ -964,8 +963,8 @@ def _validate_equinox_structure(equinox_code):
     for class_node in classes:
         # Check if class inherits from eqx.Module
         for base in class_node.bases:
-            if (hasattr(base, 'attr') and base.attr == "Module" and 
-                hasattr(base, 'value') and hasattr(base.value, 'id') and 
+            if (hasattr(base, "attr") and base.attr == "Module" and 
+                hasattr(base, "value") and hasattr(base.value, "id") and 
                 base.value.id == "eqx"):
                 equinox_classes.append(class_node)
                 break
@@ -997,7 +996,6 @@ def _validate_class_structure(class_node):
 
 def _validate_runtime_functionality(module_path):
     """Phase 3: Test runtime functionality of transpiled transformer."""
-    
     # Import the transpiled module
     try:
         module = import_transpiled_module(module_path)
@@ -1022,7 +1020,7 @@ def _validate_runtime_functionality(module_path):
 
 def _test_positional_encoding(module, key):
     """Test PositionalEncoding component."""
-    if not hasattr(module, 'PositionalEncoding'):
+    if not hasattr(module, "PositionalEncoding"):
         return  # Skip if not available
     
     key, subkey = jax.random.split(key)
@@ -1048,7 +1046,7 @@ def _test_positional_encoding(module, key):
 
 def _test_mini_transformer(module, key):
     """Test MinimalTransformer component."""
-    if not hasattr(module, 'MinimalTransformer'):
+    if not hasattr(module, "MinimalTransformer"):
         return  # Skip if not available
     
     key, subkey = jax.random.split(key)
@@ -1084,7 +1082,7 @@ def test_multihead_attention_no_dropout_instantiation_and_execution():
     model = module.MultiHeadAttentionModuleNoDropout(embed_dim, num_heads, key=key)
     
     # Verify model structure
-    assert hasattr(model, 'multihead_attn'), "Model should have multihead_attn layer"
+    assert hasattr(model, "multihead_attn"), "Model should have multihead_attn layer"
     
     # Test forward pass with single example (Equinox expects 2D input)
     key, subkey = jax.random.split(key)
@@ -1118,7 +1116,7 @@ def test_multihead_attention_no_dropout_instantiation_and_execution():
             if isinstance(grad_tree, jnp.ndarray):
                 assert jnp.all(jnp.isfinite(grad_tree)), "Gradients contain non-finite values"
                 assert jnp.any(grad_tree != 0), "All gradients are zero"
-            elif hasattr(grad_tree, '__dict__'):
+            elif hasattr(grad_tree, "__dict__"):
                 for _attr_name, attr_value in grad_tree.__dict__.items():
                     if attr_value is not None:
                         check_gradients(attr_value)
@@ -1142,7 +1140,7 @@ def test_multihead_attention_instantiation_and_execution():
     model = module.MultiHeadAttentionModule(embed_dim, num_heads, key=key)
     
     # Verify model structure
-    assert hasattr(model, 'multihead_attn'), "Model should have multihead_attn layer"
+    assert hasattr(model, "multihead_attn"), "Model should have multihead_attn layer"
     
     # Test forward pass with different batch sizes
     test_cases = [
@@ -1169,8 +1167,8 @@ def test_multihead_attention_instantiation_and_execution():
         # Verify output shapes
         if batch_size == 1:
             # Single example - no batch dimension expected
-            expected_output_shape = (seq_len, embed_dim)  # noqa: F841
-            expected_weights_shape = (seq_len, seq_len)  # noqa: F841
+            expected_output_shape = (seq_len, embed_dim)
+            expected_weights_shape = (seq_len, seq_len)
         else:
             # Multiple examples - batch dimension expected
             expected_output_shape = (batch_size, seq_len, embed_dim)  # noqa: F841
@@ -1208,7 +1206,7 @@ def _test_forward_pass_attention(model, query, key, value):
     if query.ndim > ndim and query.shape[0] > 1:
         # Batched input - use vmap
         output, weights = jax.vmap(model_call_with_inference)(query, key, value)
-        expected_batch_size = original_batch_size  # noqa: F841
+        expected_batch_size = original_batch_size
     else:
         # Single example or already squeezed
         if query.ndim > ndim and query.shape[0] == 1:
@@ -1262,7 +1260,7 @@ def _test_gradients_attention(model, query, key, value, loss_fn=None):
         if isinstance(grad_tree, jnp.ndarray):
             assert jnp.all(jnp.isfinite(grad_tree)), "Gradients contain non-finite values"
             assert jnp.any(grad_tree != 0), "All gradients are zero"
-        elif hasattr(grad_tree, '__dict__'):
+        elif hasattr(grad_tree, "__dict__"):
             for _attr_name, attr_value in grad_tree.__dict__.items():
                 if attr_value is not None:
                     check_gradients(attr_value)
@@ -1282,10 +1280,9 @@ def _test_jit_compilation_attention(model, query, key, value):
             def single_call(q_single, k_single, v_single):
                 return model.multihead_attn(q_single, k_single, v_single, need_weights=False, inference=True)
             return jax.vmap(single_call)(q, k, v)
-        else:
-            if q.ndim > ndim and q.shape[0] == 1:
-                q, k, v = q[0], k[0], v[0]  # Remove batch dimension for single example
-            return model.multihead_attn(q, k, v, need_weights=False, inference=True)
+        if q.ndim > ndim and q.shape[0] == 1:
+            q, k, v = q[0], k[0], v[0]  # Remove batch dimension for single example
+        return model.multihead_attn(q, k, v, need_weights=False, inference=True)
     
     # Test regular forward pass
     regular_output = attention_forward(model, query, key, value)

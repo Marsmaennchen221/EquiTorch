@@ -11,7 +11,7 @@ def pytest_addoption(parser):
         "--write-transpiled",
         action="store_true",
         default=False,
-        help="Write transpiled code to files in tests/transpiled/ folder"
+        help="Write transpiled code to files in tests/transpiled/ folder",
     )
 
 

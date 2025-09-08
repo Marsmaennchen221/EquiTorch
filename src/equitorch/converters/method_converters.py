@@ -161,9 +161,8 @@ def transform_size(node: ast.Call) -> ast.Subscript | ast.Attribute:
             slice=dim,
             ctx=ast.Load(),
         )
-    else:
-        # x.size() -> x.shape (return the whole shape tuple)
-        return ast.Attribute(value=input_tensor, attr="shape", ctx=ast.Load())  # type: ignore[return-value]
+    # x.size() -> x.shape (return the whole shape tuple)
+    return ast.Attribute(value=input_tensor, attr="shape", ctx=ast.Load())  # type: ignore[return-value]
 
 
 def transform_unsqueeze(node: ast.Call) -> ast.Call:
@@ -188,17 +187,16 @@ def transform_unsqueeze(node: ast.Call) -> ast.Call:
             args=[input_tensor],
             keywords=[ast.keyword(arg="axis", value=dim)],
         )
-    else:
-        # If no dimension specified, default to last dimension
-        return ast.Call(
-            func=ast.Attribute(
-                value=ast.Name(id="jnp", ctx=ast.Load()),
-                attr="expand_dims",
-                ctx=ast.Load(),
-            ),
-            args=[input_tensor],
-            keywords=[ast.keyword(arg="axis", value=ast.Constant(value=-1))],
-        )
+    # If no dimension specified, default to last dimension
+    return ast.Call(
+        func=ast.Attribute(
+            value=ast.Name(id="jnp", ctx=ast.Load()),
+            attr="expand_dims",
+            ctx=ast.Load(),
+        ),
+        args=[input_tensor],
+        keywords=[ast.keyword(arg="axis", value=ast.Constant(value=-1))],
+    )
 
 
 def transform_transpose(node: ast.Call) -> ast.Call:
@@ -225,7 +223,7 @@ def transform_transpose(node: ast.Call) -> ast.Call:
             args=[input_tensor],
             keywords=[ast.keyword(arg="axes", value=axes_tuple)],
         )
-    elif node.args and len(node.args) == node_args_len:
+    if node.args and len(node.args) == node_args_len:
         # x.transpose(dim) -> jnp.swapaxes(x, dim, -1) for single dimension
         dim = node.args[0]
         return ast.Call(
@@ -237,17 +235,16 @@ def transform_transpose(node: ast.Call) -> ast.Call:
             args=[input_tensor, dim, ast.Constant(value=-1)],
             keywords=[],
         )
-    else:
-        # x.transpose() -> jnp.transpose(x) (transpose all dimensions)
-        return ast.Call(
-            func=ast.Attribute(
-                value=ast.Name(id="jnp", ctx=ast.Load()),
-                attr="transpose",
-                ctx=ast.Load(),
-            ),
-            args=[input_tensor],
-            keywords=[],
-        )
+    # x.transpose() -> jnp.transpose(x) (transpose all dimensions)
+    return ast.Call(
+        func=ast.Attribute(
+            value=ast.Name(id="jnp", ctx=ast.Load()),
+            attr="transpose",
+            ctx=ast.Load(),
+        ),
+        args=[input_tensor],
+        keywords=[],
+    )
 
 
 def transform_dtype_cast(node: ast.Call, target_dtype: str) -> ast.Call:
