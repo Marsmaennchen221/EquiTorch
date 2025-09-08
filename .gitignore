@@ -182,3 +182,4 @@ logs/
 megalinter-reports/
 
 .archive/*
+tests/transpiled/*

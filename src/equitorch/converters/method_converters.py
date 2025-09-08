@@ -320,9 +320,22 @@ def is_tensor_method_call(node: ast.Call) -> bool:
     Returns:
         True if this is a tensor method call (x.method()), False otherwise
     """
-    return (isinstance(node.func, ast.Attribute) and
-            isinstance(node.func.value, ast.Name) and
-            node.func.value.id not in ["self", "F", "torch", "nn"])
+    if not isinstance(node.func, ast.Attribute):
+        return False
+    
+    # Check if this is a method call on a tensor-like expression
+    # This includes:
+    # - Simple variables: x.method()
+    # - Subscripts: tensor[:5].method()
+    # - Attribute access: self.tensor.method()
+    # - Function calls: func().method()
+    
+    # Exclude known non-tensor modules/objects
+    if isinstance(node.func.value, ast.Name):
+        return node.func.value.id not in ["self", "F", "torch", "nn", "jax", "jnp", "jr", "eqx", "eqt"]
+    
+    # Allow method calls on more complex expressions (subscripts, attributes, calls)
+    return isinstance(node.func.value, (ast.Subscript, ast.Attribute, ast.Call))
 
 
 def get_method_name(node: ast.Call) -> str | None:

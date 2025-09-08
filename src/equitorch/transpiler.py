@@ -86,6 +86,10 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
 
     def visit_Module(self, node: ast.Module) -> ast.Module:  # noqa: N802
         """Transform the entire module."""
+        for stmt in node.body:
+            if isinstance(stmt, (ast.Import, ast.ImportFrom)):
+                self.visit(stmt)
+        
         # Add JAX/Equinox imports at the top
         imports = [
             ast.Import(names=[ast.alias(name="jax", asname=None)]),
@@ -95,10 +99,12 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
             ast.Import(names=[ast.alias(name="equitorch.lib", asname="eqt")])
         ]
 
-        # Transform the rest of the module
+        original_imports = self.current_imports.copy()
+
         new_node: ast.Module = self.generic_visit(node)  # type: ignore[assignment]
 
-        # Filter out PyTorch imports
+        self.current_imports = original_imports
+
         filtered_body = self._filter_pytorch_imports(new_node.body)
 
         # Inject required class definitions
@@ -147,7 +153,8 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
             return self._transform_init_method(node)
         if node.name == "forward":
             return self._transform_forward_method(node)
-        return node
+        
+        return self.generic_visit(node)  # type: ignore[return-value]
 
     def visit_Assign(self, node: ast.Assign) -> list[ast.stmt]:  # noqa: N802
         """Transform assignments, adding key splitting for module initializations."""
@@ -254,7 +261,7 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
         return None
 
     def _extract_parameters(self, init_method: ast.FunctionDef) -> dict[str, dict[str, str | ast.Call]]:
-        """Extract ALL self.param = Class(...) assignments for type annotations."""
+        """Extract ALL self.param = ... assignments for type annotations."""
         class ParameterExtractor(ast.NodeVisitor):
             def __init__(self) -> None:
                 self.current_class_params: dict[str, dict[str, str | ast.Call]] = {}
@@ -263,34 +270,74 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
                 if (len(node.targets) == 1 and
                         isinstance(node.targets[0], ast.Attribute) and
                         isinstance(node.targets[0].value, ast.Name) and
-                        node.targets[0].value.id == "self" and
-                        isinstance(node.value, ast.Call)):
+                        node.targets[0].value.id == "self"):
                     param_name = node.targets[0].attr
-                    if PyTorchToEquinoxTransformer._is_pytorch_module_init(node.value):
-                        module_type = node.value.func.attr  # type: ignore[attr-defined]
-                        self.current_class_params[param_name] = ({
-                            "type": module_type,
-                            "call_node": node.value,
-                            "transformed_node": None,  # Will be filled during transformation
-                            "type_annotation": ast.Attribute(
-                                value=ast.Attribute(
-                                    value=ast.Name(id="eqx", ctx=ast.Load()),
-                                    attr="nn",
+                    
+                    if isinstance(node.value, ast.Call):
+                        # Handle module calls
+                        if PyTorchToEquinoxTransformer._is_pytorch_module_init(node.value):
+                            module_type = node.value.func.attr  # type: ignore[attr-defined]
+                            self.current_class_params[param_name] = ({
+                                "type": module_type,
+                                "call_node": node.value,
+                                "transformed_node": None,  # Will be filled during transformation
+                                "type_annotation": ast.Attribute(
+                                    value=ast.Attribute(
+                                        value=ast.Name(id="eqx", ctx=ast.Load()),
+                                        attr="nn",
+                                        ctx=ast.Load(),
+                                    ),
+                                    attr=str(module_type),
                                     ctx=ast.Load(),
-                                ),
-                                attr=str(module_type),
-                                ctx=ast.Load(),
-                            )
-                        })  # Override same name with latest assignment
-                    elif isinstance(node.value.func, ast.Name):
-                        class_name = node.value.func.id
+                                )
+                            })  # Override same name with latest assignment
+                        elif isinstance(node.value.func, ast.Name):
+                            class_name = node.value.func.id
+                            self.current_class_params[param_name] = ({
+                                "type": class_name,
+                                "call_node": node.value,
+                                "transformed_node": None,
+                                "type_annotation": None,  # Will be filled during transformation
+                            })
+                    else:
+                        # Handle non-call assignments (like self.d_model = d_model)
+                        # Infer type from the value
+                        type_annotation = self._infer_type_annotation(node.value)
                         self.current_class_params[param_name] = ({
-                            "type": class_name,
-                            "call_node": node.value,
+                            "type": "attribute",
+                            "call_node": None,
                             "transformed_node": None,
-                            "type_annotation": None,  # Will be filled during transformation
+                            "type_annotation": type_annotation,
                         })
 
+            def _infer_type_annotation(self, value_node: ast.AST) -> ast.AST:
+                """Infer type annotation from assignment value."""
+                if isinstance(value_node, ast.Name):
+                    # For simple variable assignments, assume int for common cases
+                    if value_node.id in ['d_model', 'vocab_size', 'num_heads', 'd_ff', 'hidden_size', 'input_size', 'output_size']:
+                        return ast.Name(id="int", ctx=ast.Load())
+                elif isinstance(value_node, ast.Constant):
+                    if isinstance(value_node.value, int):
+                        return ast.Name(id="int", ctx=ast.Load())
+                    elif isinstance(value_node.value, float):
+                        return ast.Name(id="float", ctx=ast.Load())
+                    elif isinstance(value_node.value, str):
+                        return ast.Name(id="str", ctx=ast.Load())
+                elif isinstance(value_node, ast.Call):
+                    # Handle special cases like jax.random.normal -> jnp.ndarray
+                    if (isinstance(value_node.func, ast.Attribute) and
+                        isinstance(value_node.func.value, ast.Attribute) and
+                        isinstance(value_node.func.value.value, ast.Name) and
+                        value_node.func.value.value.id == "jax" and
+                        value_node.func.value.attr == "random"):
+                        return ast.Attribute(
+                            value=ast.Name(id="jnp", ctx=ast.Load()),
+                            attr="ndarray",
+                            ctx=ast.Load()
+                        )
+                
+                # Default fallback
+                return ast.Name(id="object", ctx=ast.Load())
 
         extractor = ParameterExtractor()
         extractor.visit(init_method)
@@ -419,9 +466,13 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
             module_path.append(inner_node.attr)
             inner_node = inner_node.value
         if isinstance(inner_node, ast.Name):
-            if inner_node.id not in self.current_imports:
-                return False
-            module_path.append(self.current_imports[inner_node.id])
+            if inner_node.id in self.current_imports:
+                module_path.append(self.current_imports[inner_node.id])
+            else:
+                if inner_node.id == "torch":
+                    module_path.append("torch")
+                else:
+                    return False
         module_path.reverse()
         return ".".join(module_path) in ["torch.nn.functional", "torch"]
 
@@ -771,6 +822,10 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
 
     def _add_key_to_call(self, call_node: ast.Call):
         """Add key parameter to a module call using functional key splitting."""
+        # Only add key to actual Call nodes, not function references
+        if not isinstance(call_node, ast.Call):
+            return
+            
         # Check if key parameter already exists
         has_key = any(kw.arg == "key" for kw in call_node.keywords if kw.arg is not None)
 
@@ -799,13 +854,13 @@ class PyTorchToEquinoxTransformer(ast.NodeTransformer):
                 transformed_node, type_annotation = result
                 # Store the type annotation for this parameter
                 self._store_type_annotation(node, type_annotation, current_class_params)
-                # Don't add key parameter for Parameter - it's handled by functional converter
-                if module_type != "Parameter":
+                # Don't add key parameter for Parameter, Dropout, Sequential, or LayerNorm
+                if module_type not in ["Parameter", "Dropout", "Sequential", "LayerNorm"]:
                     self._add_key_to_call(transformed_node)
                 return transformed_node
             else:
-                # Old interface - add key parameter (except for Parameter)
-                if module_type != "Parameter":
+                # Old interface - add key parameter (except for Parameter and Dropout)
+                if module_type not in ["Parameter", "Dropout"]:
                     self._add_key_to_call(result)
                 return result
         return node
