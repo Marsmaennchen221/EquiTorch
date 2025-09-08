@@ -43,8 +43,8 @@ def transform_to_equinox_ast(pytorch_code: str) -> ast.AST:
     ],
 )
 def test_nn_transpilation(
-    resource_path: str | Path, snapshot_equinox_code: SnapshotAssertion, write_transpiled: bool, request
-) -> None:  # noqa: FBT001
+    resource_path: str | Path, snapshot_equinox_code: SnapshotAssertion, write_transpiled: bool, request  # noqa: FBT001
+) -> None:
     """Test transpilation of PyTorch neural networks to Equinox."""
     # Read PyTorch code
     pytorch_code = read_python_code(resource_path)
@@ -80,8 +80,8 @@ class TestPyTorchToEquinoxTransformer:
         ],
     )
     def test_visit_ImportFrom(
-        self, code: str, expected_import_name: str, expected_import_value: str
-    ) -> None:  # noqa: N802
+        self, code: str, expected_import_name: str, expected_import_value: str  # noqa: N802
+    ) -> None:
         transformer = PyTorchToEquinoxTransformer()
         transformer.visit(ast.parse(code))
         assert transformer.current_imports[expected_import_name] == expected_import_value
@@ -182,8 +182,8 @@ class TestPyTorchToEquinoxTransformer:
         ids=["no-method", "other method", "init", "forward", "init and forward"],
     )
     def test_visit_FunctionDef(
-        self, pytorch_code: str, init_method: bool, forward_method: bool
-    ) -> None:  # noqa: N802 FBT001
+        self, pytorch_code: str, init_method: bool, forward_method: bool  # noqa: N802 FBT001
+    ) -> None:
         transformer = PyTorchToEquinoxTransformer()
         tree = ast.parse(pytorch_code)
         with (
@@ -213,8 +213,8 @@ class TestPyTorchToEquinoxTransformer:
         ids=["no call", "module", "functional", "method and functional", "module_init"],
     )
     def test_visit_Call(
-        self, pytorch_code: str, call_index: list[Literal["module", "functional", "method", "module_init"]]
-    ) -> None:  # noqa: N802
+        self, pytorch_code: str, call_index: list[Literal["module", "functional", "method", "module_init"]]  # noqa: N802
+    ) -> None:
         transformer = PyTorchToEquinoxTransformer()
         tree = ast.parse(pytorch_code)
         with (
@@ -1110,8 +1110,8 @@ def _validate_equinox_structure(equinox_code):
                 break
 
     assert (
-        len(equinox_classes) >= 2
-    ), f"Expected at least 2 Equinox classes, found {len(equinox_classes)}"  # noqa: PLR2004
+        len(equinox_classes) >= 2  # noqa: PLR2004
+    ), f"Expected at least 2 Equinox classes, found {len(equinox_classes)}"
 
     # Validate each Equinox class structure
     for class_node in equinox_classes:

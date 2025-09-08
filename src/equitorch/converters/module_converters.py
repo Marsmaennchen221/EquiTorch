@@ -426,8 +426,8 @@ def _create_module_reference_ast(module_path: str) -> ast.expr:
 
 
 def transform_simple_module(
-    node: ast.Call, module_name: str, key_counter: int
-) -> tuple[ast.Call, ast.AST]:  # noqa: ARG001
+    node: ast.Call, module_name: str, key_counter: int  # noqa: ARG001
+) -> tuple[ast.Call, ast.AST]:
     """Transform a simple module using configuration."""
     config = SIMPLE_MODULE_CONFIGS.get(module_name)
     if not config:
@@ -539,8 +539,8 @@ def extract_class_info(transpiled_code: str, original_name: str) -> tuple[str, s
 
 
 def transform_auto_transpiled_module(
-    node: ast.Call, module_name: str, key_counter: int
-) -> tuple[ast.Call, ast.AST]:  # noqa: ARG001
+    node: ast.Call, module_name: str, key_counter: int  # noqa: ARG001
+) -> tuple[ast.Call, ast.AST]:
     """Transform a module using auto-transpilation."""
     # Get the auto-transpiled class info
     class_def, type_annotation = auto_transpile_module(module_name)
