@@ -25,10 +25,10 @@ class AttentionLSTM(eqx.Module):
         self.fc = eqx.nn.Linear(hidden_size, output_size, use_bias=True, key=subkey)
 
     def attention_net(self, lstm_output):
-        attention_hidden = torch.tanh(self.attention(lstm_output))
-        attention_score = torch.matmul(attention_hidden, self.context_vector)
-        attention_weights = F.softmax(attention_score, dim=1).unsqueeze(2)
-        context = torch.sum(attention_weights * lstm_output, dim=1)
+        attention_hidden = jnp.tanh(self.attention(lstm_output))
+        attention_score = jnp.matmul(attention_hidden, self.context_vector)
+        attention_weights = jnp.expand_dims(jax.nn.softmax(attention_score, dim=1), axis=2)
+        context = jnp.sum(attention_weights * lstm_output, dim=1)
         return (context, attention_weights)
 
     def __call__(self, x, hidden=None):

@@ -26,7 +26,7 @@ class RNN(eqx.Module):
         return (output, hidden)
 
     def init_hidden(self, batch_size):
-        return torch.zeros(1, batch_size, self.hidden_size)
+        return jnp.zeros((1, batch_size, self.hidden_size))
 
 class ElmanRNNCell(eqx.Module):
     """Elman RNN Cell implementation matching PyTorch's nn.RNN behavior."""

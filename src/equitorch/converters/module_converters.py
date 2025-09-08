@@ -36,7 +36,6 @@ SIMPLE_MODULE_MAPPINGS: dict[str, str] = {
     "Dropout": "eqx.nn.Dropout",
     "LayerNorm": "eqx.nn.LayerNorm",
     "Embedding": "eqx.nn.Embedding",
-    "ReLU": "jax.nn.relu",
 }
 
 
@@ -73,10 +72,13 @@ SIMPLE_MODULE_CONFIGS: dict[str, SimpleModuleConfig] = {
     "BatchNorm1d": SimpleModuleConfig(target_module="eqx.nn.BatchNorm1d"),
     "BatchNorm2d": SimpleModuleConfig(target_module="eqx.nn.BatchNorm2d"),
     "BatchNorm3d": SimpleModuleConfig(target_module="eqx.nn.BatchNorm3d"),
-    "Dropout": SimpleModuleConfig(target_module="eqx.nn.Dropout"),
+    "Dropout": SimpleModuleConfig(
+        target_module="eqx.nn.Dropout",
+        parameter_filters={"key"}  # Dropout doesn't take a key parameter
+    ),
     "LayerNorm": SimpleModuleConfig(
         target_module="eqx.nn.LayerNorm",
-        parameter_filters={"elementwise_affine", "eps"}  # Filter PyTorch-specific params
+        parameter_filters={"elementwise_affine", "eps", "key"}  # Filter PyTorch-specific params and key
     ),
     "Embedding": SimpleModuleConfig(
         target_module="eqx.nn.Embedding",
@@ -99,6 +101,8 @@ CUSTOM_MODULE_TRANSFORMERS: dict[str, Callable[[ast.Call, int], tuple[ast.Call, 
     "Parameter": lambda node, key_counter: transform_parameter(node, key_counter),
     "Sequential": lambda node, key_counter: transform_sequential(node, key_counter),
     "ModuleList": lambda node, key_counter: transform_module_list(node, key_counter),
+    "ReLU": lambda node, key_counter: transform_relu(node, key_counter),
+    "Dropout": lambda node, key_counter: transform_dropout(node, key_counter),
 }
 
 
@@ -273,19 +277,41 @@ def transform_parameter(node: ast.Call, key_counter: int) -> tuple[ast.Call, ast
 
 
 def transform_sequential(node: ast.Call, key_counter: int) -> tuple[ast.Call, ast.AST]:
-    """Transform nn.Sequential to a simple list of modules."""
-    # For now, just pass through the arguments and add key parameter
-    keywords = list(node.keywords)
-    keywords.append(ast.keyword(arg="key", value=ast.Name(id="subkey", ctx=ast.Load())))
+    """Transform nn.Sequential to eqx.nn.Sequential.
     
-    # Use auto-transpilation for Sequential
+    Equinox Sequential expects a list of layers, not individual arguments.
+    """
+    # Filter out any PyTorch-specific keywords (including key - Sequential doesn't need it)
+    keywords = [kw for kw in node.keywords if kw.arg != "key"]
+    
+    # Wrap all arguments in a list - eqx.nn.Sequential expects a list of layers
+    layers_list = ast.List(elts=list(node.args), ctx=ast.Load())
+    
+    # Create call to eqx.nn.Sequential with list of layers
     transformed_node = ast.Call(
-        func=ast.Name(id="Sequential", ctx=ast.Load()),
-        args=node.args,
+        func=ast.Attribute(
+            value=ast.Attribute(
+                value=ast.Name(id="eqx", ctx=ast.Load()),
+                attr="nn",
+                ctx=ast.Load()
+            ),
+            attr="Sequential",
+            ctx=ast.Load()
+        ),
+        args=[layers_list],  # Pass the list as a single argument
         keywords=keywords
     )
     
-    type_annotation = ast.Name(id="Sequential", ctx=ast.Load())
+    # Type annotation should also use eqx.nn.Sequential
+    type_annotation = ast.Attribute(
+        value=ast.Attribute(
+            value=ast.Name(id="eqx", ctx=ast.Load()),
+            attr="nn",
+            ctx=ast.Load()
+        ),
+        attr="Sequential",
+        ctx=ast.Load()
+    )
     
     return transformed_node, type_annotation
 
@@ -304,6 +330,73 @@ def transform_module_list(node: ast.Call, key_counter: int) -> tuple[ast.Call, a
     )
     
     type_annotation = ast.Name(id="ModuleList", ctx=ast.Load())
+    
+    return transformed_node, type_annotation
+
+
+def transform_relu(node: ast.Call, key_counter: int) -> tuple[ast.Call, ast.AST]:
+    """Transform nn.ReLU to jax.nn.relu function reference for Sequential.
+    
+    In Equinox Sequential, activation functions should be passed as functions,
+    not instantiated modules. This returns jax.nn.relu directly.
+    """
+    # Return jax.nn.relu as a function reference (no call, no key parameter)
+    transformed_node = ast.Attribute(
+        value=ast.Attribute(
+            value=ast.Name(id="jax", ctx=ast.Load()),
+            attr="nn",
+            ctx=ast.Load()
+        ),
+        attr="relu",
+        ctx=ast.Load()
+    )
+    
+    # Type annotation is also jax.nn.relu (function type)
+    type_annotation = ast.Attribute(
+        value=ast.Attribute(
+            value=ast.Name(id="jax", ctx=ast.Load()),
+            attr="nn",
+            ctx=ast.Load()
+        ),
+        attr="relu",
+        ctx=ast.Load()
+    )
+    
+    return transformed_node, type_annotation
+
+
+def transform_dropout(node: ast.Call, key_counter: int) -> tuple[ast.Call, ast.AST]:
+    """Transform nn.Dropout to eqx.nn.Dropout without key parameter.
+    
+    Equinox Dropout doesn't take a key parameter.
+    """
+    # Filter out any existing key parameters and create clean call
+    filtered_keywords = [kw for kw in node.keywords if kw.arg != "key"]
+    
+    transformed_node = ast.Call(
+        func=ast.Attribute(
+            value=ast.Attribute(
+                value=ast.Name(id="eqx", ctx=ast.Load()),
+                attr="nn",
+                ctx=ast.Load()
+            ),
+            attr="Dropout",
+            ctx=ast.Load()
+        ),
+        args=node.args,
+        keywords=filtered_keywords
+    )
+    
+    # Type annotation
+    type_annotation = ast.Attribute(
+        value=ast.Attribute(
+            value=ast.Name(id="eqx", ctx=ast.Load()),
+            attr="nn",
+            ctx=ast.Load()
+        ),
+        attr="Dropout",
+        ctx=ast.Load()
+    )
     
     return transformed_node, type_annotation
 
@@ -342,8 +435,9 @@ def transform_simple_module(node: ast.Call, module_name: str, key_counter: int) 
         for param, value in config.default_parameters.items():
             keywords.append(ast.keyword(arg=param, value=ast.Constant(value=value)))
     
-    # Add key parameter
-    keywords.append(ast.keyword(arg="key", value=ast.Name(id="subkey", ctx=ast.Load())))
+    # Add key parameter only if not filtered out
+    if not config.parameter_filters or "key" not in config.parameter_filters:
+        keywords.append(ast.keyword(arg="key", value=ast.Name(id="subkey", ctx=ast.Load())))
     
     # Select arguments
     args = node.args
