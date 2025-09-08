@@ -5,6 +5,7 @@ import equinox as eqx
 import equitorch.lib as eqt
 
 class RNN(eqx.Module):
+    hidden_size: int
     rnn: ElmanRNNCell
     fc: eqx.nn.Linear
 

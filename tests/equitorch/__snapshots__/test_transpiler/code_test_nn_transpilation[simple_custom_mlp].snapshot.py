@@ -6,7 +6,7 @@ import equitorch.lib as eqt
 
 class CustomLinear(eqx.Module):
     weight: jnp.ndarray
-    bias: jnp.ndarray
+    bias: object
 
     def __init__(self, in_features, out_features, bias=True, key=None, **kwargs):
         if key is None:
