@@ -152,6 +152,7 @@ plots/
 # Generated code (output artifacts from transpiler)
 # Assumes this directory holds only generated code that can be recreated
 transpiled_equinox/
+/tests/transpiled/
 
 # Log files
 logs/
