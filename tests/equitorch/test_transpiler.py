@@ -213,7 +213,9 @@ class TestPyTorchToEquinoxTransformer:
         ids=["no call", "module", "functional", "method and functional", "module_init"],
     )
     def test_visit_Call(
-        self, pytorch_code: str, call_index: list[Literal["module", "functional", "method", "module_init"]]  # noqa: N802
+        self,
+        pytorch_code: str,
+        call_index: list[Literal["module", "functional", "method", "module_init"]],  # noqa: N802
     ) -> None:
         transformer = PyTorchToEquinoxTransformer()
         tree = ast.parse(pytorch_code)
