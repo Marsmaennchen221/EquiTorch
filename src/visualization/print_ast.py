@@ -1,4 +1,5 @@
 """Visualization for the AST."""
+
 import ast
 from pathlib import Path
 
@@ -14,7 +15,7 @@ for node in ast.walk(tree):
     if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "view":
         print("Found view operation:")  # noqa: T201
         print(ast.dump(node, indent=4))  # noqa: T201
-        
+
         # Print the arguments
         print("\nArguments:")  # noqa: T201
         for i, arg in enumerate(node.args):

@@ -33,8 +33,9 @@ class PythonCodeSnapshotExtension(SingleFileSnapshotExtension):
         return f"code_{original_name}"
 
     def matches(self, *, serialized_data: bytes, snapshot_data: bytes) -> bool:
-        return (serialized_data.decode(encoding="utf-8").replace("\r\n", "\n") ==
-                snapshot_data.decode(encoding="utf-8").replace("\r\n", "\n"))
+        return serialized_data.decode(encoding="utf-8").replace("\r\n", "\n") == snapshot_data.decode(
+            encoding="utf-8"
+        ).replace("\r\n", "\n")
 
 
 @pytest.fixture
