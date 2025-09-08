@@ -113,7 +113,10 @@ def transform_simple_functional(node: ast.Call, new_module: str, new_func: str) 
 
 
 def transform_max_pool(
-    node: ast.Call, new_module: str, new_func: str, func_name: str,  # noqa: ARG001
+    node: ast.Call,
+    new_module: str,  # noqa: ARG001
+    new_func: str,  # noqa: ARG001
+    func_name: str,  # noqa: ARG001
 ) -> ast.Call | ast.expr:
     """Transform max_pool with proper parameter mapping using jax.scipy.signal.pool.
 
