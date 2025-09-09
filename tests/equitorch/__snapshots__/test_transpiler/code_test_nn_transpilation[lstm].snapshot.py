@@ -5,6 +5,7 @@ import equinox as eqx
 import equitorch.lib as eqt
 
 class AttentionLSTM(eqx.Module):
+    hidden_size: int
     lstm: eqx.nn.LSTMCell
     attention: eqx.nn.Linear
     context_vector: jnp.ndarray
